@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 type ComponentId =
   | "vpc"
@@ -15,119 +15,54 @@ type ComponentId =
   | "public-rt"
   | "private-rt-a"
   | "private-rt-b"
-  | "sg"
+  | "security-groups"
+  | "ssm"
   | "bastion"
   | "public-ec2"
   | "nat-instance";
 
-type AnswerKey = {
-  albPlacement: string;
-  appPlacement: string;
-  privateRoute: string;
-  natDesign: string;
-  adminAccess: string;
-  appInbound: string;
-  publicExposure: string;
-};
-
-const correctAnswers: AnswerKey = {
-  albPlacement: "public",
-  appPlacement: "private",
-  privateRoute: "nat",
-  natDesign: "two",
-  adminAccess: "ssm",
-  appInbound: "alb-sg",
-  publicExposure: "alb-only",
-};
-
-const components: {
+type Component = {
   id: ComponentId;
   name: string;
-  description: string;
-}[] = [
-  {
-    id: "vpc",
-    name: "VPC",
-    description: "Isolated virtual network",
-  },
-  {
-    id: "igw",
-    name: "Internet Gateway",
-    description: "Connects public resources to the Internet",
-  },
-  {
-    id: "public-a",
-    name: "Public Subnet — AZ A",
-    description: "Subnet with Internet Gateway route",
-  },
-  {
-    id: "public-b",
-    name: "Public Subnet — AZ B",
-    description: "Subnet with Internet Gateway route",
-  },
-  {
-    id: "private-a",
-    name: "Private App Subnet — AZ A",
-    description: "Application workload subnet",
-  },
-  {
-    id: "private-b",
-    name: "Private App Subnet — AZ B",
-    description: "Application workload subnet",
-  },
-  {
-    id: "alb",
-    name: "Application Load Balancer",
-    description: "HTTP/HTTPS entry point",
-  },
-  {
-    id: "nat-a",
-    name: "NAT Gateway — AZ A",
-    description: "Outbound connectivity for private resources",
-  },
-  {
-    id: "nat-b",
-    name: "NAT Gateway — AZ B",
-    description: "Outbound connectivity for private resources",
-  },
-  {
-    id: "public-rt",
-    name: "Public Route Table",
-    description: "Routes public traffic toward the IGW",
-  },
-  {
-    id: "private-rt-a",
-    name: "Private Route Table — AZ A",
-    description: "Controls private subnet traffic",
-  },
-  {
-    id: "private-rt-b",
-    name: "Private Route Table — AZ B",
-    description: "Controls private subnet traffic",
-  },
-  {
-    id: "sg",
-    name: "Security Groups",
-    description: "Stateful workload traffic controls",
-  },
-  {
-    id: "bastion",
-    name: "Bastion Host",
-    description: "Jump server for administrative access",
-  },
-  {
-    id: "public-ec2",
-    name: "Public EC2 Instance",
-    description: "EC2 instance with public Internet exposure",
-  },
-  {
-    id: "nat-instance",
-    name: "NAT Instance",
-    description: "Self-managed outbound gateway",
-  },
+  group: "network" | "compute" | "security" | "routing" | "access";
+};
+
+type ConnectionEndpoint = ComponentId | "internet";
+
+type Connection = {
+  from: ConnectionEndpoint;
+  to: ConnectionEndpoint;
+};
+
+const components: Component[] = [
+  { id: "vpc", name: "VPC", group: "network" },
+  { id: "igw", name: "Internet Gateway", group: "network" },
+
+  { id: "public-a", name: "Public Subnet — AZ-A", group: "network" },
+  { id: "public-b", name: "Public Subnet — AZ-B", group: "network" },
+
+  { id: "private-a", name: "Private App Subnet — AZ-A", group: "network" },
+  { id: "private-b", name: "Private App Subnet — AZ-B", group: "network" },
+
+  { id: "alb", name: "Application Load Balancer", group: "compute" },
+
+  { id: "nat-a", name: "NAT Gateway — AZ-A", group: "network" },
+  { id: "nat-b", name: "NAT Gateway — AZ-B", group: "network" },
+
+  { id: "public-rt", name: "Public Route Table", group: "routing" },
+  { id: "private-rt-a", name: "Private Route Table — AZ-A", group: "routing" },
+  { id: "private-rt-b", name: "Private Route Table — AZ-B", group: "routing" },
+
+  { id: "security-groups", name: "Security Groups", group: "security" },
+
+  { id: "ssm", name: "AWS Systems Manager", group: "access" },
+  { id: "bastion", name: "Bastion Host", group: "access" },
+
+  { id: "public-ec2", name: "Public EC2 Instance", group: "compute" },
+  { id: "nat-instance", name: "NAT Instance", group: "network" },
 ];
 
-const requiredComponents: ComponentId[] = [
+const correctComponents: ComponentId[] = [
   "vpc",
   "igw",
   "public-a",
@@ -140,109 +75,60 @@ const requiredComponents: ComponentId[] = [
   "public-rt",
   "private-rt-a",
   "private-rt-b",
-  "sg",
+  "security-groups",
+  "ssm",
 ];
 
-const questions = [
-  {
-    id: "albPlacement",
-    title: "1. Where should the Application Load Balancer live?",
-    options: [
-      ["public", "Public subnets"],
-      ["private", "Private application subnets"],
-      ["both", "Both public and private subnets"],
-    ],
-  },
-  {
-    id: "appPlacement",
-    title: "2. Where should the application servers live?",
-    options: [
-      ["public", "Public subnets"],
-      ["private", "Private application subnets"],
-      ["alb", "Inside the ALB"],
-    ],
-  },
-  {
-    id: "privateRoute",
-    title: "3. What should the private subnet default route use?",
-    options: [
-      ["igw", "Internet Gateway"],
-      ["nat", "NAT Gateway"],
-      ["alb", "Application Load Balancer"],
-      ["none", "No default route"],
-    ],
-  },
-  {
-    id: "natDesign",
-    title: "4. For production HA across two AZs, how many NAT Gateways?",
-    options: [
-      ["one", "One shared NAT Gateway"],
-      ["two", "One NAT Gateway per AZ"],
-      ["zero", "None"],
-    ],
-  },
-  {
-    id: "adminAccess",
-    title: "5. How should administrators access private EC2 instances?",
-    options: [
-      ["ssm", "AWS Systems Manager Session Manager"],
-      ["bastion", "Public bastion host"],
-      ["ssh-public", "SSH directly over the Internet"],
-    ],
-  },
-  {
-    id: "appInbound",
-    title: "6. What should the application Security Group allow inbound from?",
-    options: [
-      ["internet", "0.0.0.0/0"],
-      ["alb-sg", "The ALB Security Group"],
-      ["bastion", "The Bastion Security Group"],
-      ["none", "Nothing"],
-    ],
-  },
-  {
-    id: "publicExposure",
-    title: "7. What should be publicly reachable?",
-    options: [
-      ["everything", "ALB and application servers"],
-      ["alb-only", "Only the Internet-facing ALB"],
-      ["ec2", "Application EC2 instances"],
-      ["none", "Nothing"],
-    ],
-  },
+const forbiddenComponents: ComponentId[] = [
+  "bastion",
+  "public-ec2",
+  "nat-instance",
 ];
 
-export default function AwsVpcLab() {
+const correctConnections: Connection[] = [
+  { from: "internet", to: "igw" } as Connection,
+  { from: "igw", to: "public-rt" },
+  { from: "public-rt", to: "public-a" },
+  { from: "public-rt", to: "public-b" },
+
+  { from: "public-a", to: "alb" },
+  { from: "public-b", to: "alb" },
+
+  { from: "alb", to: "private-a" },
+  { from: "alb", to: "private-b" },
+
+  { from: "private-a", to: "private-rt-a" },
+  { from: "private-b", to: "private-rt-b" },
+
+  { from: "private-rt-a", to: "nat-a" },
+  { from: "private-rt-b", to: "nat-b" },
+
+  { from: "nat-a", to: "igw" },
+  { from: "nat-b", to: "igw" },
+
+  { from: "security-groups", to: "alb" },
+  { from: "security-groups", to: "private-a" },
+  { from: "security-groups", to: "private-b" },
+
+  { from: "ssm", to: "private-a" },
+  { from: "ssm", to: "private-b" },
+];
+
+const allComponentIds = components.map((c) => c.id);
+
+export default function AwsVpcAssessment() {
   const [selected, setSelected] = useState<ComponentId[]>([]);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [connectMode, setConnectMode] = useState(false);
+  const [connectionSource, setConnectionSource] =
+    useState<ComponentId | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState<number | null>(null);
 
-  useEffect(() => {
-    const stored = localStorage.getItem("cloudops-lab-01-submitted");
-
-    if (stored === "true") {
-      setSubmitted(true);
-
-      const storedScore = localStorage.getItem("cloudops-lab-01-score");
-
-      if (storedScore) {
-        setScore(Number(storedScore));
-      }
-    }
-  }, []);
-
-  const componentScore = useMemo(() => {
-    const correct = selected.filter((id) =>
-      requiredComponents.includes(id)
-    ).length;
-
-    const incorrect = selected.filter(
-      (id) => !requiredComponents.includes(id)
-    ).length;
-
-    return Math.max(0, correct - incorrect);
-  }, [selected]);
+  const selectedComponents = useMemo(
+    () => components.filter((component) => selected.includes(component.id)),
+    [selected]
+  );
 
   function toggleComponent(id: ComponentId) {
     if (submitted) return;
@@ -252,154 +138,261 @@ export default function AwsVpcLab() {
         ? current.filter((item) => item !== id)
         : [...current, id]
     );
+
+    setConnections((current) =>
+      current.filter(
+        (connection) => connection.from !== id && connection.to !== id
+      )
+    );
+
+    setConnectionSource(null);
   }
 
-  function selectAnswer(questionId: string, value: string) {
-    if (submitted) return;
+  function handleNodeClick(id: ComponentId) {
+    if (submitted || !connectMode) return;
 
-    setAnswers((current) => ({
-      ...current,
-      [questionId]: value,
-    }));
+    if (!connectionSource) {
+      setConnectionSource(id);
+      return;
+    }
+
+    if (connectionSource === id) {
+      setConnectionSource(null);
+      return;
+    }
+
+    const exists = connections.some(
+      (connection) =>
+        (connection.from === connectionSource && connection.to === id) ||
+        (connection.from === id && connection.to === connectionSource)
+    );
+
+    if (!exists) {
+      setConnections((current) => [
+        ...current,
+        { from: connectionSource, to: id },
+      ]);
+    }
+
+    setConnectionSource(null);
+  }
+
+  function normalizeConnection(connection: Connection) {
+    return `${connection.from}->${connection.to}`;
+  }
+
+  function calculateScore() {
+    let total = 0;
+
+    // Component selection: 45 points
+    const requiredSelected = correctComponents.filter((id) =>
+      selected.includes(id)
+    ).length;
+
+    total += Math.round(
+      (requiredSelected / correctComponents.length) * 45
+    );
+
+    // Unnecessary / dangerous components: -5 each
+    const unnecessarySelected = forbiddenComponents.filter((id) =>
+      selected.includes(id)
+    ).length;
+
+    total -= unnecessarySelected * 5;
+
+    // Connections: 40 points
+    const normalizedStudent = new Set(
+      connections.map(normalizeConnection)
+    );
+
+    const normalizedCorrect = correctConnections.map(normalizeConnection);
+
+    const correctConnectionCount = normalizedCorrect.filter((connection) =>
+      normalizedStudent.has(connection)
+    ).length;
+
+    total += Math.round(
+      (correctConnectionCount / normalizedCorrect.length) * 40
+    );
+
+    // Architecture decisions: 15 points
+    const hasBothAzs =
+      selected.includes("private-a") &&
+      selected.includes("private-b") &&
+      selected.includes("public-a") &&
+      selected.includes("public-b");
+
+    const hasNatHa =
+      selected.includes("nat-a") &&
+      selected.includes("nat-b");
+
+    const hasSecureAccess = selected.includes("ssm");
+
+    if (hasBothAzs) total += 5;
+    if (hasNatHa) total += 5;
+    if (hasSecureAccess) total += 5;
+
+    return Math.max(0, Math.min(100, total));
   }
 
   function submitAssessment() {
     if (submitted) return;
 
-    const questionScore = questions.reduce((total, question) => {
-      return (
-        total +
-        (answers[question.id] ===
-        correctAnswers[question.id as keyof AnswerKey]
-          ? 1
-          : 0)
-      );
-    }, 0);
-
-    const finalScore = Math.max(
-      0,
-      componentScore + questionScore
-    );
+    const finalScore = calculateScore();
 
     setScore(finalScore);
     setSubmitted(true);
-
-    localStorage.setItem("cloudops-lab-01-submitted", "true");
-    localStorage.setItem("cloudops-lab-01-score", String(finalScore));
+    setConnectMode(false);
+    setConnectionSource(null);
   }
 
-  const totalPoints = requiredComponents.length + questions.length;
+  function resetLab() {
+    if (submitted) return;
+
+    setSelected([]);
+    setConnections([]);
+    setConnectMode(false);
+    setConnectionSource(null);
+  }
+
+  function getComponentName(id: ComponentId | "internet") {
+    if (id === "internet") return "Internet";
+
+    return components.find((component) => component.id === id)?.name ?? id;
+  }
 
   return (
     <main className="min-h-screen bg-[#070b12] text-white">
-      <header className="border-b border-white/10">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
+      {/* Header */}
+      <header className="border-b border-white/10 bg-[#070b12]">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div>
             <a
               href="/"
-              className="text-sm text-gray-500 hover:text-white"
+              className="text-xs text-gray-600 hover:text-gray-300"
             >
               ← CloudOps SimLab
             </a>
 
-            <h1 className="mt-2 text-xl font-semibold">
+            <h1 className="mt-1 text-sm font-semibold">
               AWS VPC Architecture Assessment
             </h1>
           </div>
 
           <div
-            className={`rounded-full border px-4 py-2 text-xs ${
+            className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-wider ${
               submitted
                 ? "border-red-400/30 bg-red-400/10 text-red-300"
                 : "border-blue-400/30 bg-blue-400/10 text-blue-300"
             }`}
           >
-            {submitted ? "SUBMITTED — LOCKED" : "ATTEMPT 1 OF 1"}
+            {submitted ? "SUBMITTED — LOCKED" : "ONE ATTEMPT"}
           </div>
         </div>
       </header>
 
+      {/* Scenario */}
       <section className="border-b border-white/10 bg-[#090e17]">
-        <div className="mx-auto max-w-7xl px-6 py-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
-            Scenario
-          </p>
+        <div className="mx-auto max-w-7xl px-6 py-8">
+          <div className="max-w-5xl">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-blue-400">
+              Scenario
+            </p>
 
-          <h2 className="mt-3 text-3xl font-bold">
-            Design a production-grade private application network
-          </h2>
+            <h2 className="mt-2 text-2xl font-bold">
+              Design a production-grade private application network
+            </h2>
 
-          <div className="mt-5 max-w-4xl space-y-3 text-gray-400">
-            <p>
+            <p className="mt-4 max-w-4xl text-sm leading-6 text-gray-400">
               You are designing infrastructure for a customer-facing API.
               The application must be highly available across two
               Availability Zones.
             </p>
 
-            <p>
+            <p className="mt-3 max-w-4xl text-sm leading-6 text-gray-400">
               Application servers must never have public IP addresses.
               Customers must be able to reach the application from the
-              Internet, while administrators must be able to access the
-              servers without exposing SSH to the Internet.
+              Internet, while administrators must be able to securely access
+              the servers without exposing SSH to the Internet.
             </p>
 
-            <p>
-              The application also needs outbound Internet connectivity
+            <p className="mt-3 max-w-4xl text-sm leading-6 text-gray-400">
+              The application also requires outbound Internet connectivity
               for operating-system and software updates.
             </p>
 
-            <p className="font-medium text-white">
+            <p className="mt-4 text-xs font-medium text-gray-300">
               You are given several infrastructure components. Some are
-              unnecessary or deliberately unsafe. Select only what you
-              believe is required and answer the architecture questions.
+              unnecessary or deliberately unsafe. Select only what you believe
+              is required and construct the architecture.
             </p>
-          </div>
 
-          <div className="mt-6 grid gap-3 md:grid-cols-4">
-            <Requirement text="2 Availability Zones" />
-            <Requirement text="No public EC2" />
-            <Requirement text="Private application tier" />
-            <Requirement text="One attempt only" />
+            <div className="mt-5 grid gap-3 sm:grid-cols-4">
+              <Requirement label="2 Availability Zones" />
+              <Requirement label="No public EC2" />
+              <Requirement label="Private application tier" />
+              <Requirement label="One attempt only" />
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-6 py-10">
-        {submitted && (
-          <div className="mb-8 rounded-2xl border border-blue-400/20 bg-blue-400/5 p-6">
-            <p className="text-sm text-gray-400">
-              Assessment Result
-            </p>
+      {/* Locked result */}
+      {submitted && (
+        <section className="border-b border-white/10 bg-[#080d15]">
+          <div className="mx-auto max-w-7xl px-6 py-6">
+            <div className="rounded-xl border border-blue-400/20 bg-blue-400/[0.03] p-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs text-gray-500">
+                    Assessment Result
+                  </p>
 
-            <div className="mt-2 flex items-end gap-3">
-              <span className="text-5xl font-bold">
-                {score}
-              </span>
+                  <div className="mt-1 flex items-end gap-2">
+                    <span className="text-4xl font-bold">
+                      {score}
+                    </span>
+                    <span className="mb-1 text-sm text-gray-500">
+                      / 100
+                    </span>
+                  </div>
 
-              <span className="mb-1 text-gray-500">
-                / {totalPoints}
-              </span>
+                  <p className="mt-2 text-xs text-gray-500">
+                    Your assessment is permanently locked for this browser.
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-red-400/20 bg-red-400/5 px-4 py-3 text-xs text-red-300">
+                  No further changes permitted
+                </div>
+              </div>
             </div>
-
-            <p className="mt-3 text-sm text-gray-400">
-              Your assessment is permanently locked for this browser.
-            </p>
           </div>
-        )}
+        </section>
+      )}
 
-        <div className="grid gap-8 lg:grid-cols-[360px_1fr]">
+      {/* Assessment */}
+      <section>
+        <div className="mx-auto grid max-w-7xl gap-6 px-6 py-8 lg:grid-cols-[300px_1fr]">
+          {/* Inventory */}
           <aside>
             <div className="mb-4">
-              <p className="text-sm font-semibold">
-                Infrastructure Components
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">
+                  Component Inventory
+                </p>
 
-              <p className="mt-1 text-xs text-gray-500">
-                Think carefully. Incorrect components reduce your score.
+                <span className="text-[10px] text-gray-600">
+                  {selected.length}/{components.length}
+                </span>
+              </div>
+
+              <p className="mt-1 text-xs text-gray-600">
+                Choose the components you believe belong in the architecture.
               </p>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2">
               {components.map((component) => {
                 const active = selected.includes(component.id);
 
@@ -408,10 +401,10 @@ export default function AwsVpcLab() {
                     key={component.id}
                     disabled={submitted}
                     onClick={() => toggleComponent(component.id)}
-                    className={`w-full rounded-xl border p-4 text-left transition ${
+                    className={`w-full rounded-lg border px-3 py-3 text-left transition ${
                       active
                         ? "border-blue-400/50 bg-blue-500/10"
-                        : "border-white/10 bg-white/[0.02] hover:border-white/25"
+                        : "border-white/10 bg-white/[0.015] hover:border-white/25"
                     } ${
                       submitted
                         ? "cursor-not-allowed opacity-70"
@@ -419,135 +412,265 @@ export default function AwsVpcLab() {
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-medium">
+                      <span className="text-xs font-medium">
                         {component.name}
                       </span>
 
-                      <span className="font-mono text-xs text-gray-500">
+                      <span
+                        className={`text-[9px] font-semibold ${
+                          active
+                            ? "text-blue-400"
+                            : "text-gray-700"
+                        }`}
+                      >
                         {active ? "SELECTED" : "SELECT"}
                       </span>
                     </div>
-
-                    <p className="mt-2 text-xs leading-5 text-gray-500">
-                      {component.description}
-                    </p>
                   </button>
                 );
               })}
             </div>
+
+            {!submitted && (
+              <button
+                onClick={resetLab}
+                className="mt-4 w-full rounded-lg border border-white/10 px-4 py-2.5 text-xs text-gray-500 hover:border-white/25 hover:text-white"
+              >
+                Reset Architecture
+              </button>
+            )}
           </aside>
 
+          {/* Canvas */}
           <div>
-            <div className="rounded-2xl border border-white/10 bg-[#0b111b] p-6">
-              <div className="mb-8">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
                 <p className="text-sm font-semibold">
-                  Architecture Decisions
+                  Architecture Canvas
                 </p>
 
-                <p className="mt-1 text-xs text-gray-500">
-                  There is no feedback until you submit.
+                <p className="mt-1 text-xs text-gray-600">
+                  Select components, then connect them.
                 </p>
               </div>
 
-              <div className="space-y-8">
-                {questions.map((question) => (
-                  <div key={question.id}>
-                    <p className="mb-3 font-medium">
-                      {question.title}
-                    </p>
+              {!submitted && (
+                <button
+                  onClick={() => {
+                    setConnectMode((current) => !current);
+                    setConnectionSource(null);
+                  }}
+                  className={`rounded-lg border px-4 py-2 text-xs font-medium transition ${
+                    connectMode
+                      ? "border-blue-400/50 bg-blue-500/10 text-blue-300"
+                      : "border-white/10 text-gray-400 hover:border-white/25 hover:text-white"
+                  }`}
+                >
+                  {connectMode
+                    ? "Connection Mode ON"
+                    : "Connect Components"}
+                </button>
+              )}
+            </div>
 
-                    <div className="grid gap-2">
-                      {question.options.map(([value, label]) => {
-                        const checked =
-                          answers[question.id] === value;
+            {connectMode && !submitted && (
+              <div className="mb-4 rounded-lg border border-blue-400/20 bg-blue-400/5 px-4 py-3 text-xs text-blue-300">
+                {connectionSource
+                  ? `Source selected: ${getComponentName(
+                      connectionSource
+                    )}. Now select the destination component.`
+                  : "Select a component to start a connection."}
+              </div>
+            )}
 
-                        const correct =
-                          submitted &&
-                          correctAnswers[
-                            question.id as keyof AnswerKey
-                          ] === value;
+            <div className="min-h-[620px] rounded-2xl border border-white/10 bg-[#0b111b] p-5">
+              <div className="rounded-xl border border-blue-400/20 bg-blue-400/[0.02] p-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-mono text-[10px] text-blue-400">
+                      AWS_VPC
+                    </span>
+                    <h3 className="mt-1 font-semibold">
+                      10.0.0.0/16
+                    </h3>
+                  </div>
 
-                        const wrong =
-                          submitted &&
-                          checked &&
-                          !correct;
+                  <div className="rounded-md border border-white/10 px-3 py-1 text-[10px] text-gray-600">
+                    us-east-1
+                  </div>
+                </div>
+
+                {/* Architecture nodes */}
+                <div className="mt-8 grid gap-4">
+                  {selectedComponents.length === 0 ? (
+                    <div className="flex min-h-[480px] items-center justify-center rounded-xl border border-dashed border-white/10">
+                      <div className="text-center">
+                        <div className="text-3xl text-gray-700">
+                          +
+                        </div>
+                        <p className="mt-3 text-sm text-gray-500">
+                          Your architecture starts here
+                        </p>
+                        <p className="mt-1 text-xs text-gray-700">
+                          Select components from the inventory
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {selectedComponents.map((component) => {
+                        const isSource =
+                          connectionSource === component.id;
 
                         return (
                           <button
-                            key={value}
-                            disabled={submitted}
+                            key={component.id}
                             onClick={() =>
-                              selectAnswer(question.id, value)
+                              handleNodeClick(component.id)
                             }
-                            className={`rounded-xl border p-4 text-left text-sm transition ${
-                              correct
-                                ? "border-green-400/50 bg-green-400/10"
-                                : wrong
-                                ? "border-red-400/50 bg-red-400/10"
-                                : checked
-                                ? "border-blue-400/50 bg-blue-400/10"
-                                : "border-white/10 bg-white/[0.02] hover:border-white/25"
+                            className={`rounded-xl border p-4 text-left transition ${
+                              isSource
+                                ? "border-blue-400 bg-blue-500/10"
+                                : "border-white/10 bg-white/[0.02]"
+                            } ${
+                              connectMode
+                                ? "cursor-crosshair hover:border-blue-400/50"
+                                : ""
                             }`}
                           >
-                            {label}
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold">
+                                {component.name}
+                              </span>
+
+                              {isSource && (
+                                <span className="text-[9px] text-blue-400">
+                                  SOURCE
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="mt-2 text-[10px] text-gray-600">
+                              {component.group.toUpperCase()}
+                            </p>
                           </button>
                         );
                       })}
                     </div>
-                  </div>
-                ))}
-              </div>
+                  )}
+                </div>
 
-              {!submitted && (
-                <div className="mt-10 border-t border-white/10 pt-8">
-                  <div className="mb-5 rounded-xl border border-yellow-400/20 bg-yellow-400/5 p-4">
-                    <p className="text-sm font-semibold text-yellow-300">
-                      ⚠ Final submission
+                {/* Connections */}
+                <div className="mt-8">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-xs font-semibold">
+                      Architecture Connections
                     </p>
 
-                    <p className="mt-2 text-xs leading-5 text-gray-400">
-                      You have exactly one attempt. Once submitted,
-                      your architecture cannot be changed.
+                    <span className="text-[10px] text-gray-600">
+                      {connections.length} connection
+                      {connections.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+
+                  {connections.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-white/10 px-4 py-6 text-center text-xs text-gray-700">
+                      No connections defined
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {connections.map((connection, index) => (
+                        <div
+                          key={`${connection.from}-${connection.to}-${index}`}
+                          className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/[0.02] px-4 py-3"
+                        >
+                          <span className="text-xs text-gray-300">
+                            {getComponentName(connection.from)}
+                          </span>
+
+                          <span className="text-blue-400">
+                            →
+                          </span>
+
+                          <span className="text-xs text-gray-300">
+                            {getComponentName(connection.to)}
+                          </span>
+
+                          {!submitted && (
+                            <button
+                              onClick={() =>
+                                setConnections((current) =>
+                                  current.filter(
+                                    (_, i) => i !== index
+                                  )
+                                )
+                              }
+                              className="ml-auto text-[10px] text-gray-700 hover:text-red-400"
+                            >
+                              REMOVE
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Submit */}
+            {!submitted && (
+              <div className="mt-5 rounded-xl border border-white/10 bg-[#0b111b] p-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold">
+                      Ready to submit?
+                    </p>
+
+                    <p className="mt-1 text-xs leading-5 text-gray-600">
+                      Your architecture will be evaluated and permanently
+                      locked after submission.
                     </p>
                   </div>
 
                   <button
                     onClick={submitAssessment}
-                    className="w-full rounded-xl bg-blue-500 px-6 py-4 font-semibold text-white transition hover:bg-blue-400"
+                    className="rounded-lg bg-blue-500 px-6 py-3 text-xs font-semibold text-white transition hover:bg-blue-400"
                   >
-                    Submit Architecture — 1 Attempt
+                    Submit Architecture
                   </button>
                 </div>
-              )}
+              </div>
+            )}
 
-              {submitted && (
-                <div className="mt-10 border-t border-white/10 pt-8">
-                  <h3 className="font-semibold">
-                    Assessment Review
-                  </h3>
+            {/* Post-submission review */}
+            {submitted && (
+              <div className="mt-5 rounded-xl border border-white/10 bg-[#0b111b] p-5">
+                <p className="text-sm font-semibold">
+                  Assessment Review
+                </p>
 
-                  <p className="mt-2 text-sm text-gray-400">
-                    Correct answers are highlighted in green.
-                    Incorrect selections are highlighted in red.
+                <p className="mt-1 text-xs text-gray-600">
+                  The architecture below represents exactly what the
+                  candidate submitted.
+                </p>
+
+                <div className="mt-5 rounded-lg border border-white/5 bg-white/[0.02] p-4">
+                  <p className="text-xs font-semibold">
+                    Expected production architecture
                   </p>
 
-                  <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.02] p-5">
-                    <p className="text-sm font-semibold">
-                      Expected production architecture
-                    </p>
-
-                    <p className="mt-3 text-sm leading-6 text-gray-400">
-                      Internet → Internet-facing ALB → private
-                      application subnets across two AZs.
-                      Private subnets use NAT Gateways for outbound
-                      Internet access. Administrative access should
-                      use Systems Manager rather than a publicly
-                      exposed bastion or SSH endpoint.
-                    </p>
-                  </div>
+                  <p className="mt-3 text-xs leading-6 text-gray-500">
+                    Internet → Internet Gateway → public subnets →
+                    internet-facing ALB → private application subnets
+                    across two Availability Zones. Private subnets use
+                    AZ-local NAT Gateways for outbound connectivity.
+                    Administrative access should use Systems Manager
+                    rather than a publicly exposed SSH endpoint.
+                  </p>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -555,11 +678,11 @@ export default function AwsVpcLab() {
   );
 }
 
-function Requirement({ text }: { text: string }) {
+function Requirement({ label }: { label: string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-gray-300">
-      <span className="mr-2 text-blue-400">✓</span>
-      {text}
+    <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.015] px-3 py-2.5">
+      <span className="text-blue-400">✓</span>
+      <span className="text-[10px] text-gray-400">{label}</span>
     </div>
   );
 }
