@@ -1,1101 +1,644 @@
-"use client";
+import Link from "next/link";
 
-import { useMemo, useState } from "react";
-
-type Group =
-  | "network"
-  | "subnets"
-  | "load"
-  | "compute"
-  | "api"
-  | "data"
-  | "routing"
-  | "security"
-  | "access";
-
-type ComponentId = string;
-type Link = { from: ComponentId; to: ComponentId };
-
-type Item = {
-  id: ComponentId;
-  name: string;
-  group: Group;
+type Lab = {
+  number: string;
+  title: string;
+  category: string;
+  difficulty: string;
+  time: string;
   description: string;
-  tags?: string[];
+  tags: string[];
+  href: string;
+  available: boolean;
 };
 
-type PatternId = "alb-ec2" | "alb-ecs" | "api-lambda" | "api-ecs";
-
-type Pattern = {
-  id: PatternId;
-  name: string;
-  short: string;
-  description: string;
-  required: string[];
-  forbidden: string[];
-  links: [string, string][];
-  decisions: Record<string, string>;
-};
-
-const inventory: Item[] = [
-  // NETWORK
-  { id: "vpc", name: "VPC", group: "network", description: "Isolated virtual network" },
-  { id: "igw", name: "Internet Gateway", group: "network", description: "Internet path for public IPv4 resources" },
-  { id: "egress-igw", name: "Egress-Only Internet Gateway", group: "network", description: "IPv6-only outbound Internet path" },
-  { id: "nat-a", name: "NAT Gateway — AZ-A", group: "network", description: "Private IPv4 outbound connectivity in AZ-A" },
-  { id: "nat-b", name: "NAT Gateway — AZ-B", group: "network", description: "Private IPv4 outbound connectivity in AZ-B" },
-  { id: "nat-instance", name: "NAT Instance", group: "network", description: "Legacy EC2-based NAT implementation" },
-  { id: "tgw", name: "Transit Gateway", group: "network", description: "Hub for multiple VPCs and networks" },
-  { id: "peering", name: "VPC Peering", group: "network", description: "Point-to-point private VPC connectivity" },
-
-  // SUBNETS
-  { id: "public-a", name: "Public Subnet — AZ-A", group: "subnets", description: "Internet-facing subnet in AZ-A" },
-  { id: "public-b", name: "Public Subnet — AZ-B", group: "subnets", description: "Internet-facing subnet in AZ-B" },
-  { id: "private-a", name: "Private App Subnet — AZ-A", group: "subnets", description: "Private application workload subnet" },
-  { id: "private-b", name: "Private App Subnet — AZ-B", group: "subnets", description: "Private application workload subnet" },
-  { id: "db-a", name: "Database Subnet — AZ-A", group: "subnets", description: "Private database tier subnet" },
-  { id: "db-b", name: "Database Subnet — AZ-B", group: "subnets", description: "Private database tier subnet" },
-  { id: "isolated", name: "Isolated Subnet", group: "subnets", description: "Subnet with no Internet route" },
-
-  // LOAD / API
-  { id: "alb", name: "Application Load Balancer", group: "load", description: "Layer-7 HTTP/HTTPS application entry point" },
-  { id: "nlb", name: "Network Load Balancer", group: "load", description: "Layer-4 load balancer for TCP/UDP workloads" },
-  { id: "gwlb", name: "Gateway Load Balancer", group: "load", description: "Traffic insertion for security appliances" },
-  { id: "api-gateway", name: "API Gateway", group: "api", description: "Managed public API front door" },
-  { id: "vpc-link", name: "API Gateway VPC Link", group: "api", description: "Private API Gateway connectivity to VPC services" },
-
-  // COMPUTE
-  { id: "ec2", name: "EC2 Instance", group: "compute", description: "Application compute workload" },
-  { id: "public-ec2", name: "Public EC2 Instance", group: "compute", description: "EC2 with direct Internet exposure" },
-  { id: "asg", name: "Auto Scaling Group", group: "compute", description: "Maintains compute capacity across AZs" },
-  { id: "ecs", name: "ECS / Fargate Service", group: "compute", description: "Managed containerized application service" },
-  { id: "lambda", name: "Lambda Function", group: "compute", description: "Serverless application compute" },
-
-  // DATA / OTHER
-  { id: "rds", name: "Amazon RDS", group: "data", description: "Managed relational database" },
-  { id: "redis", name: "ElastiCache / Redis", group: "data", description: "Managed in-memory cache" },
-  { id: "s3-endpoint", name: "S3 Gateway Endpoint", group: "data", description: "Private VPC access to S3" },
-  { id: "efs", name: "EFS File System", group: "data", description: "Shared network file storage" },
-
-  // ROUTING
-  { id: "public-rt", name: "Public Route Table", group: "routing", description: "Routes public subnets toward the Internet Gateway" },
-  { id: "private-rt-a", name: "Private Route Table — AZ-A", group: "routing", description: "Private routing for AZ-A" },
-  { id: "private-rt-b", name: "Private Route Table — AZ-B", group: "routing", description: "Private routing for AZ-B" },
-  { id: "nacl", name: "Network ACL", group: "routing", description: "Subnet-level stateless filtering" },
-  { id: "prefix-list", name: "Managed Prefix List", group: "routing", description: "Reusable CIDR collection" },
-
-  // SECURITY / ACCESS
-  { id: "sg", name: "Security Group", group: "security", description: "Stateful workload traffic control" },
-  { id: "waf", name: "AWS WAF", group: "security", description: "Managed web application firewall" },
-  { id: "shield", name: "AWS Shield", group: "security", description: "DDoS protection service" },
-  { id: "ssm", name: "AWS Systems Manager", group: "access", description: "Secure administration without public SSH" },
-  { id: "bastion", name: "Bastion Host", group: "access", description: "Jump host for administrative access" },
-  { id: "iam", name: "IAM Role", group: "access", description: "Workload identity and permissions" },
-  { id: "cloudwatch", name: "CloudWatch Logs", group: "access", description: "Application and infrastructure observability" },
-  { id: "secrets", name: "Secrets Manager", group: "access", description: "Managed secret storage" },
-];
-
-const sections: [Group, string][] = [
-  ["network", "NETWORK"],
-  ["subnets", "SUBNETS"],
-  ["load", "LOAD BALANCING"],
-  ["api", "API FRONT DOOR"],
-  ["compute", "COMPUTE"],
-  ["data", "DATA & STORAGE"],
-  ["routing", "ROUTING"],
-  ["security", "SECURITY"],
-  ["access", "ACCESS & MANAGEMENT"],
-];
-
-const commonNetwork = [
-  "vpc",
-  "igw",
-  "public-a",
-  "public-b",
-  "private-a",
-  "private-b",
-  "nat-a",
-  "nat-b",
-  "public-rt",
-  "private-rt-a",
-  "private-rt-b",
-  "sg",
-];
-
-const patterns: Pattern[] = [
+const labs: Lab[] = [
   {
-    id: "alb-ec2",
-    name: "ALB + EC2",
-    short: "Traditional VPC application",
-    description: "Internet-facing ALB distributes traffic to private EC2 application workloads across two AZs.",
-    required: [...commonNetwork, "alb", "ec2", "ssm"],
-    forbidden: ["public-ec2", "nat-instance"],
-    links: [
-      ["vpc", "igw"],
-      ["igw", "public-rt"],
-      ["public-a", "public-rt"],
-      ["public-b", "public-rt"],
-      ["public-a", "alb"],
-      ["public-b", "alb"],
-      ["alb", "private-a"],
-      ["alb", "private-b"],
-      ["private-a", "private-rt-a"],
-      ["private-b", "private-rt-b"],
-      ["private-rt-a", "nat-a"],
-      ["private-rt-b", "nat-b"],
-      ["nat-a", "igw"],
-      ["nat-b", "igw"],
-      ["private-a", "ec2"],
-      ["private-b", "ec2"],
-      ["ssm", "ec2"],
-    ],
-    decisions: {
-      entry: "Application Load Balancer",
-      compute: "Private application subnets",
-      admin: "AWS Systems Manager",
-      outbound: "NAT Gateway",
-      public: "ALB only",
-    },
+    number: "01",
+    title: "AWS VPC Architecture",
+    category: "NETWORKING",
+    difficulty: "ADVANCED",
+    time: "20–30 min",
+    description:
+      "Design a production API network while choosing between multiple valid AWS implementation patterns.",
+    tags: ["AWS", "Networking", "Security"],
+    href: "/labs/aws-vpc",
+    available: true,
   },
   {
-    id: "alb-ecs",
-    name: "ALB + ECS/Fargate",
-    short: "Managed container application",
-    description: "Internet-facing ALB routes to private ECS/Fargate tasks spread across two AZs.",
-    required: [...commonNetwork, "alb", "ecs"],
-    forbidden: ["public-ec2", "ec2", "nat-instance"],
-    links: [
-      ["vpc", "igw"],
-      ["igw", "public-rt"],
-      ["public-a", "public-rt"],
-      ["public-b", "public-rt"],
-      ["public-a", "alb"],
-      ["public-b", "alb"],
-      ["alb", "private-a"],
-      ["alb", "private-b"],
-      ["private-a", "private-rt-a"],
-      ["private-b", "private-rt-b"],
-      ["private-rt-a", "nat-a"],
-      ["private-rt-b", "nat-b"],
-      ["nat-a", "igw"],
-      ["nat-b", "igw"],
-      ["private-a", "ecs"],
-      ["private-b", "ecs"],
-    ],
-    decisions: {
-      entry: "Application Load Balancer",
-      compute: "Private application subnets",
-      admin: "ECS Exec / service-native access",
-      outbound: "NAT Gateway",
-      public: "ALB only",
-    },
+    number: "02",
+    title: "Terraform Infrastructure Assessment",
+    category: "INFRASTRUCTURE AS CODE",
+    difficulty: "ADVANCED",
+    time: "25–35 min",
+    description:
+      "Test your ability to design reusable, production-grade infrastructure using Terraform, including state, variables, modules, dependencies and AWS resources.",
+    tags: ["Terraform", "IaC", "AWS"],
+    href: "/labs/terraform",
+    available: true,
   },
   {
-    id: "api-lambda",
-    name: "API Gateway + Lambda",
-    short: "Serverless API",
-    description: "Managed API Gateway exposes the API and invokes Lambda without public application servers.",
-    required: ["api-gateway", "lambda", "iam"],
-    forbidden: ["public-ec2", "alb", "ec2", "ecs", "nat-instance"],
-    links: [
-      ["api-gateway", "lambda"],
-      ["lambda", "iam"],
-    ],
-    decisions: {
-      entry: "API Gateway",
-      compute: "Lambda",
-      admin: "No instance administration",
-      outbound: "Managed service / VPC integration only when required",
-      public: "API Gateway only",
-    },
+    number: "03",
+    title: "CI/CD Pipeline",
+    category: "DEVOPS",
+    difficulty: "ADVANCED",
+    time: "25–35 min",
+    description:
+      "Design a production CI/CD pipeline covering source control, testing, artifacts, deployment, security and production promotion.",
+    tags: ["GitHub Actions", "CI/CD", "DevOps"],
+    href: "/labs/cicd",
+    available: true,
   },
   {
-    id: "api-ecs",
-    name: "API Gateway + ECS",
-    short: "Private container API",
-    description: "API Gateway uses VPC Link to reach an ECS service kept private inside the VPC.",
-    required: [
-      ...commonNetwork,
-      "api-gateway",
-      "vpc-link",
-      "ecs",
-    ],
-    forbidden: ["public-ec2", "ec2", "alb", "nat-instance"],
-    links: [
-      ["vpc", "igw"],
-      ["igw", "public-rt"],
-      ["public-a", "public-rt"],
-      ["public-b", "public-rt"],
-      ["private-a", "private-rt-a"],
-      ["private-b", "private-rt-b"],
-      ["private-rt-a", "nat-a"],
-      ["private-rt-b", "nat-b"],
-      ["nat-a", "igw"],
-      ["nat-b", "igw"],
-      ["api-gateway", "vpc-link"],
-      ["vpc-link", "ecs"],
-      ["private-a", "ecs"],
-      ["private-b", "ecs"],
-    ],
-    decisions: {
-      entry: "API Gateway",
-      compute: "Private application subnets",
-      admin: "ECS Exec / service-native access",
-      outbound: "NAT Gateway",
-      public: "API Gateway only",
-    },
+    number: "04",
+    title: "Kubernetes Deployment",
+    category: "CONTAINERS",
+    difficulty: "ADVANCED",
+    time: "25–35 min",
+    description:
+      "Design a production Kubernetes workload using deployments, services, ingress, health probes, autoscaling, security and resilient operations.",
+    tags: ["Kubernetes", "Containers", "SRE"],
+    href: "/labs/kubernetes",
+    available: true,
   },
 ];
 
-const decisionOptions: Record<string, string[]> = {
-  entry: ["Application Load Balancer", "API Gateway", "Internet Gateway", "Public EC2"],
-  compute: ["Private application subnets", "Public subnets", "Database subnets", "Lambda"],
-  admin: ["AWS Systems Manager", "ECS Exec / service-native access", "SSH from the Internet", "Public bastion only", "No instance administration"],
-  outbound: ["NAT Gateway", "Internet Gateway directly", "NAT Instance", "Managed service / VPC integration only when required"],
-  public: ["ALB only", "API Gateway only", "ALB and application servers", "Application servers only", "Nothing"],
-};
+const platforms = [
+  {
+    title: "AWS",
+    description:
+      "VPC, compute, IAM, load balancing and production networking.",
+    icon: "AWS",
+    live: true,
+  },
+  {
+    title: "Azure",
+    description:
+      "Virtual networks, identity, compute and enterprise architecture.",
+    icon: "AZ",
+    live: false,
+  },
+  {
+    title: "GCP",
+    description:
+      "VPC, GKE, IAM and scalable cloud infrastructure patterns.",
+    icon: "GC",
+    live: false,
+  },
+];
 
-const pairKey = (a: string, b: string) => [a, b].sort().join("::");
-
-function getPattern(id: PatternId) {
-  return patterns.find((p) => p.id === id)!;
-}
-
-export default function AwsVpcAssessment() {
-  const [pattern, setPattern] = useState<PatternId | "">("");
-  const [selected, setSelected] = useState<string[]>([]);
-  const [links, setLinks] = useState<Link[]>([]);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [connect, setConnect] = useState(false);
-  const [first, setFirst] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
-  const [search, setSearch] = useState("");
-
-  const activePattern = pattern ? getPattern(pattern) : null;
-
-  const visible = useMemo(() => {
-    const q = search.toLowerCase().trim();
-    return sections
-      .map(([group, label]) => ({
-        label,
-        items: inventory.filter(
-          (x) =>
-            x.group === group &&
-            (!q ||
-              x.name.toLowerCase().includes(q) ||
-              x.description.toLowerCase().includes(q))
-        ),
-      }))
-      .filter((x) => x.items.length);
-  }, [search]);
-
-  const evaluation = useMemo(() => {
-    if (!activePattern) {
-      return {
-        required: 0,
-        requiredTotal: 0,
-        unnecessary: selected.length,
-        forbidden: 0,
-        correctLinks: 0,
-        requiredLinks: 0,
-        decisions: 0,
-        decisionTotal: 5,
-        componentScore: 0,
-        connectionScore: 0,
-        decisionScore: 0,
-        penalties: 0,
-        score: 0,
-      };
-    }
-
-    const requiredCount = activePattern.required.filter((id) => selected.includes(id)).length;
-    const unnecessary = selected.filter((id) => !activePattern.required.includes(id));
-    const forbidden = selected.filter((id) => activePattern.forbidden.includes(id));
-    const requiredLinks = activePattern.links.map(([from, to]) => pairKey(from, to));
-    const correctLinks = links.filter((l) => requiredLinks.includes(pairKey(l.from, l.to)));
-    const decisions = Object.entries(activePattern.decisions).filter(
-      ([key, expected]) => answers[key] === expected
-    ).length;
-
-    const componentScore =
-      (requiredCount / activePattern.required.length) * 35;
-
-    const connectionScore =
-      (correctLinks.length / requiredLinks.length) * 40;
-
-    const decisionScore = (decisions / 5) * 25;
-
-    const penalties =
-      Math.min(15, unnecessary.length * 1.5) +
-      Math.min(15, forbidden.length * 5);
-
-    return {
-      required: requiredCount,
-      requiredTotal: activePattern.required.length,
-      unnecessary: unnecessary.length,
-      forbidden: forbidden.length,
-      correctLinks: correctLinks.length,
-      requiredLinks: requiredLinks.length,
-      decisions,
-      decisionTotal: 5,
-      componentScore,
-      connectionScore,
-      decisionScore,
-      penalties,
-      score: Math.max(
-        0,
-        Math.min(100, Math.round(componentScore + connectionScore + decisionScore - penalties))
-      ),
-    };
-  }, [activePattern, selected, links, answers]);
-
-  function choosePattern(id: PatternId) {
-    if (submitted) return;
-    setPattern(id);
-    setSelected([]);
-    setLinks([]);
-    setAnswers({});
-    setConnect(false);
-    setFirst(null);
-  }
-
-  function clickItem(id: string) {
-    if (submitted || !activePattern) return;
-
-    if (connect) {
-      if (!selected.includes(id)) return;
-      if (!first) {
-        setFirst(id);
-        return;
-      }
-      if (first === id) {
-        setFirst(null);
-        return;
-      }
-
-      const next = { from: first, to: id };
-      if (!links.some((l) => pairKey(l.from, l.to) === pairKey(next.from, next.to))) {
-        setLinks((current) => [...current, next]);
-      }
-      setFirst(null);
-      return;
-    }
-
-    setSelected((current) =>
-      current.includes(id)
-        ? current.filter((x) => x !== id)
-        : [...current, id]
-    );
-  }
-
-  function remove(id: string) {
-    if (submitted) return;
-    setSelected((current) => current.filter((x) => x !== id));
-    setLinks((current) => current.filter((l) => l.from !== id && l.to !== id));
-  }
-
-  function retryAssessment() {
-    setSelected([]);
-    setLinks([]);
-    setAnswers({});
-    setConnect(false);
-    setFirst(null);
-    setSubmitted(false);
-    setSearch("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  const complete =
-    !!activePattern &&
-    evaluation.required === evaluation.requiredTotal &&
-    evaluation.forbidden === 0 &&
-    evaluation.correctLinks === evaluation.requiredLinks &&
-    evaluation.decisions === evaluation.decisionTotal;
-
-  if (submitted && activePattern) {
-    const unnecessaryIds = selected.filter(
-      (id) => !activePattern.required.includes(id)
-    );
-
-    return (
-      <main className="min-h-screen bg-[#050810] text-white">
-        <Header locked pattern={activePattern.name} />
-
-        <section className="border-b border-white/10 bg-[#070b13]">
-          <div className="mx-auto max-w-6xl px-6 py-10">
-            <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
-              <div>
-                <p className="text-[10px] uppercase tracking-[.22em] text-blue-400">
-                  Architecture Result · LAB_01
-                </p>
-                <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
-                  {complete ? "Architecture accepted" : "Architecture submitted"}
-                </h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
-                  Review the architecture score, component selection, connections and
-                  engineering decisions for the <span className="text-gray-300">{activePattern.name}</span> pattern.
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-blue-400/20 bg-blue-500/[.04] px-6 py-4">
-                <p className="text-[9px] uppercase tracking-[.18em] text-blue-300">
-                  Selected pattern
-                </p>
-                <p className="mt-1 text-lg font-semibold">{activePattern.name}</p>
-              </div>
-            </div>
-
-            <div className="mt-7 rounded-2xl border border-white/10 bg-[#0b111b] p-6 sm:p-8">
-              <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
-                <div>
-                  <p className="text-7xl font-semibold tracking-[-.04em]">
-                    {evaluation.score}
-                    <span className="ml-2 text-lg text-gray-600">/ 100</span>
-                  </p>
-                  <p className="mt-2 text-xs uppercase tracking-[.16em] text-gray-600">
-                    Final architecture score
-                  </p>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-white/[.02] px-5 py-4 text-right">
-                  <p className="text-[9px] uppercase tracking-wider text-gray-600">
-                    Assessment mode
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-emerald-300">
-                    Practice · Unlimited Attempts
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <ScoreCard label="Component selection" value={`${Math.round(evaluation.componentScore)} / 35`} />
-                <ScoreCard label="Network connections" value={`${Math.round(evaluation.connectionScore)} / 40`} />
-                <ScoreCard label="Architecture decisions" value={`${Math.round(evaluation.decisionScore)} / 25`} />
-                <ScoreCard label="Penalties" value={`-${Math.round(evaluation.penalties)}`} warning={evaluation.penalties > 0} />
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              <Stat label="Required components" value={`${evaluation.required}/${evaluation.requiredTotal}`} />
-              <Stat label="Correct connections" value={`${evaluation.correctLinks}/${evaluation.requiredLinks}`} />
-              <Stat label="Decisions" value={`${evaluation.decisions}/5`} />
-              <Stat label="Unnecessary" value={`${evaluation.unnecessary}`} />
-              <Stat label="Forbidden" value={`${evaluation.forbidden}`} />
-            </div>
-          </div>
-        </section>
-
-        <section className="mx-auto grid max-w-6xl gap-5 px-6 py-8 md:grid-cols-2">
-          <Panel title="Architecture Findings">
-            <Finding ok={evaluation.required === evaluation.requiredTotal}>
-              {evaluation.required === evaluation.requiredTotal
-                ? "All required components for the selected pattern were selected."
-                : `${evaluation.requiredTotal - evaluation.required} required component(s) are missing.`}
-            </Finding>
-            <Finding ok={evaluation.correctLinks === evaluation.requiredLinks}>
-              {evaluation.requiredLinks - evaluation.correctLinks} required connection(s) are missing.
-            </Finding>
-            <Finding ok={evaluation.unnecessary === 0}>
-              {evaluation.unnecessary} unnecessary component(s) were selected.
-            </Finding>
-            <Finding ok={evaluation.forbidden === 0}>
-              {evaluation.forbidden} explicitly unsafe component(s) were selected.
-            </Finding>
-          </Panel>
-
-          <Panel title="Submitted Components">
-            {selected.length === 0 ? (
-              <p className="text-xs text-gray-600">No components were selected.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {selected.map((id) => {
-                  const required = activePattern.required.includes(id);
-                  const forbidden = activePattern.forbidden.includes(id);
-                  return (
-                    <div
-                      key={id}
-                      className={`rounded-md border px-3 py-2 text-[10px] ${
-                        forbidden
-                          ? "border-red-500/30 text-red-300"
-                          : required
-                            ? "border-emerald-500/30 text-emerald-300"
-                            : "border-amber-500/30 text-amber-300"
-                      }`}
-                    >
-                      {forbidden ? "×" : required ? "✓" : "•"} {name(id)}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Panel>
-
-          <div className="md:col-span-2">
-            <Panel title="Architecture Decision Results">
-              <div className="space-y-2">
-                {Object.entries(activePattern.decisions).map(([key, expected]) => {
-                  const answer = answers[key] || "Not answered";
-                  const ok = answer === expected;
-                  return (
-                    <div
-                      key={key}
-                      className={`rounded-lg border p-4 ${
-                        ok
-                          ? "border-emerald-500/20 bg-emerald-500/[.02]"
-                          : "border-red-500/20 bg-red-500/[.02]"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <p className="text-xs font-medium">
-                          {ok ? "✓" : "×"} {decisionLabel(key)}
-                        </p>
-                        <span className={`text-[9px] uppercase tracking-wider ${ok ? "text-emerald-300" : "text-red-300"}`}>
-                          {ok ? "Correct" : "Review"}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-[10px] text-gray-500">
-                        Your answer: <span className="text-gray-300">{answer}</span>
-                      </p>
-                      {!ok && (
-                        <p className="mt-1 text-[10px] text-gray-500">
-                          Expected for {activePattern.name}: <span className="text-gray-300">{expected}</span>
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </Panel>
-          </div>
-
-          {unnecessaryIds.length > 0 && (
-            <div className="md:col-span-2 rounded-xl border border-amber-400/20 bg-amber-400/[.025] p-4 text-[10px] text-gray-500">
-              <span className="font-semibold text-amber-300">Engineering note:</span>{" "}
-              resources outside the selected pattern are not automatically bad in every
-              real-world system. This lab scores whether they belong in the architecture
-              you chose for this scenario.
-            </div>
-          )}
-
-          <section className="md:col-span-2 rounded-2xl border border-blue-400/20 bg-blue-500/[.025] p-5">
-            <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-              <div>
-                <p className="text-[9px] font-semibold uppercase tracking-[.2em] text-blue-300">
-                  Assessment complete
-                </p>
-                <h3 className="mt-1 text-lg font-semibold">Ready for another architecture challenge?</h3>
-                <p className="mt-1 text-xs text-gray-500">
-                  Practice mode is unlimited. You can retry this VPC assessment or continue to the Terraform assessment.
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <a
-                  href="/#labs"
-                  className="rounded-lg border border-white/10 px-4 py-2.5 text-center text-xs font-semibold text-gray-300 transition hover:border-white/20 hover:bg-white/[.04] hover:text-white"
-                >
-                  ← Back to Assessments
-                </a>
-                <button
-                  onClick={retryAssessment}
-                  className="rounded-lg border border-blue-400/30 bg-blue-500/[.08] px-4 py-2.5 text-xs font-semibold text-blue-200 transition hover:border-blue-300/50 hover:bg-blue-500/[.14]"
-                >
-                  Try VPC Again
-                </button>
-                <a
-                  href="/labs/terraform"
-                  className="rounded-lg bg-blue-500 px-4 py-2.5 text-center text-xs font-semibold text-[#021018] transition hover:bg-blue-400"
-                >
-                  Continue to Terraform →
-                </a>
-              </div>
-            </div>
-          </section>
-        </section>
-      </main>
-    );
-  }
-
+export default function Home() {
   return (
-    <main className="min-h-screen bg-[#050810] text-white">
-      <Header pattern={activePattern?.name} />
+    <main className="min-h-screen overflow-hidden bg-[#03060b] text-white">
+      {/* Background */}
+      <div className="pointer-events-none fixed inset-0">
+        <div className="absolute left-[8%] top-[-180px] h-[520px] w-[520px] rounded-full bg-cyan-500/[0.08] blur-[140px]" />
 
-      <section className="border-b border-white/10 bg-[#090e17]">
-        <div className="mx-auto max-w-7xl px-6 py-9">
-          <p className="text-[10px] uppercase tracking-[.22em] text-blue-400">
-            Networking Assessment · LAB_01
-          </p>
-          <h2 className="mt-2 text-3xl font-bold tracking-tight">
-            Design a production-grade API architecture
-          </h2>
-          <p className="mt-3 max-w-5xl text-sm leading-7 text-gray-400">
-            You are designing infrastructure for a customer-facing API. The application
-            must be highly available where the chosen architecture requires multiple
-            Availability Zones. Public application workloads must never receive public
-            IP addresses. Customers must be able to reach the API from the Internet,
-            and private workloads must have appropriate administrative and outbound
-            connectivity. Choose an architecture pattern, then prove the design with
-            components, relationships, and engineering decisions.
-          </p>
+        <div className="absolute right-[-100px] top-[20%] h-[620px] w-[620px] rounded-full bg-blue-600/[0.10] blur-[170px]" />
 
-          <div className="mt-6 grid gap-3 md:grid-cols-4">
-            <Requirement label="Multiple valid architectures" />
-            <Requirement label="No public application workloads" />
-            <Requirement label="Architecture-aware scoring" />
-            <Requirement label="Practice mode — unlimited attempts" />
+        <div className="absolute bottom-[-220px] left-[35%] h-[500px] w-[500px] rounded-full bg-indigo-600/[0.07] blur-[160px]" />
+
+        <div
+          className="absolute inset-0 opacity-[0.12]"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px)",
+            backgroundSize: "48px 48px",
+          }}
+        />
+      </div>
+
+      {/* Navigation */}
+      <nav className="sticky top-0 z-50 border-b border-white/[0.08] bg-[#03060b]/75 backdrop-blur-2xl">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+          <Link href="/" className="group flex items-center gap-3">
+            <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-cyan-300/20 bg-gradient-to-br from-cyan-400 to-blue-600 font-black shadow-lg shadow-blue-600/20">
+              <span>C</span>
+
+              <span className="absolute inset-0 bg-white/20 opacity-0 transition group-hover:opacity-100" />
+            </div>
+
+            <div>
+              <div className="font-semibold tracking-tight">
+                CloudOps SimLab
+              </div>
+
+              <div className="text-[9px] uppercase tracking-[0.24em] text-gray-500">
+                Cloud Engineering Simulator
+              </div>
+            </div>
+          </Link>
+
+          <div className="hidden items-center gap-7 text-xs text-gray-400 md:flex">
+            <a
+              href="#platforms"
+              className="transition hover:text-white"
+            >
+              Platforms
+            </a>
+
+            <a
+              href="#labs"
+              className="transition hover:text-white"
+            >
+              Assessments
+            </a>
+
+            <a
+              href="#about"
+              className="transition hover:text-white"
+            >
+              About
+            </a>
+
+            <a
+              href="https://github.com/simransangha144/cloudops-simlab"
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border border-white/10 px-4 py-2 transition hover:border-cyan-400/30 hover:bg-white/[0.04] hover:text-white"
+            >
+              GitHub ↗
+            </a>
           </div>
+        </div>
+      </nav>
+
+      {/* Hero */}
+      <section className="relative">
+        <div className="mx-auto grid max-w-7xl items-center gap-14 px-6 pb-24 pt-24 lg:grid-cols-[1.08fr_.92fr] lg:pb-32 lg:pt-28">
+          <div>
+            <div className="mb-7 inline-flex items-center gap-3 rounded-full border border-cyan-400/20 bg-cyan-400/[0.06] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-300">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-cyan-300 shadow-[0_0_14px_rgba(103,232,249,.9)]" />
+
+              Production-style cloud assessments
+            </div>
+
+            <h1 className="text-5xl font-bold leading-[0.98] tracking-[-0.055em] sm:text-6xl lg:text-7xl">
+              Test cloud engineering
+              <br />
+
+              <span className="bg-gradient-to-r from-cyan-300 via-blue-400 to-indigo-400 bg-clip-text text-transparent">
+                without the training wheels.
+              </span>
+            </h1>
+
+            <p className="mt-7 max-w-2xl text-base leading-8 text-gray-400 sm:text-lg">
+              A hands-on simulator for testing real infrastructure judgment.
+              Candidates read requirements, choose an architecture, connect
+              resources and submit their design.
+            </p>
+
+            <div className="mt-9 flex flex-wrap gap-3">
+              {/* IMPORTANT:
+                  This now scrolls to the assessment cards instead of
+                  immediately opening the VPC assessment.
+              */}
+              <a
+                href="#labs"
+                className="group flex items-center gap-4 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-6 py-3.5 text-sm font-bold text-[#021018] shadow-xl shadow-cyan-500/10 transition hover:-translate-y-0.5 hover:shadow-cyan-500/20"
+              >
+                Start Assessment
+
+                <span className="transition group-hover:translate-x-1">
+                  →
+                </span>
+              </a>
+
+              <a
+                href="#labs"
+                className="rounded-xl border border-white/10 bg-white/[0.025] px-6 py-3.5 text-sm font-semibold text-gray-300 transition hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+              >
+                Explore Labs
+              </a>
+            </div>
+
+            <div className="mt-10 flex flex-wrap gap-x-8 gap-y-3 text-[10px] uppercase tracking-[0.16em] text-gray-600">
+              <span>Architecture judgment</span>
+              <span>•</span>
+              <span>Production patterns</span>
+              <span>•</span>
+              <span>Hands-on decisions</span>
+            </div>
+          </div>
+
+          <ArchitecturePreview />
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-6 pt-7">
-        <div className="rounded-2xl border border-blue-400/20 bg-blue-500/[.035] p-5">
-          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+      {/* Platforms */}
+      <section
+        id="platforms"
+        className="relative border-y border-white/[0.07] bg-white/[0.012]"
+      >
+        <div className="mx-auto max-w-7xl px-6 py-20">
+          <div className="mb-9 flex items-end justify-between gap-6">
             <div>
-              <p className="text-[9px] font-semibold uppercase tracking-[.2em] text-blue-300">
-                Step 01 · Choose your architecture
+              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-cyan-400">
+                Platforms
               </p>
-              <h2 className="mt-1 text-lg font-semibold">
-                There is more than one correct AWS answer.
+
+              <h2 className="mt-3 text-3xl font-bold tracking-tight">
+                Cloud, without the shortcuts.
               </h2>
-              <p className="mt-1 text-xs text-gray-500">
-                Select the delivery pattern you are going to defend. The scoring engine
-                changes its valid components and connections accordingly.
-              </p>
             </div>
-            <span className="rounded-full border border-blue-400/20 px-3 py-1.5 text-[9px] uppercase tracking-wider text-blue-300">
-              Pattern-aware
+
+            <span className="hidden text-[10px] uppercase tracking-[0.2em] text-gray-600 md:block">
+              AWS live • Azure / GCP next
             </span>
           </div>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {patterns.map((p) => {
-              const active = p.id === pattern;
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => choosePattern(p.id)}
-                  className={`rounded-xl border p-4 text-left transition ${
-                    active
-                      ? "border-blue-400/60 bg-blue-500/[.09] shadow-lg shadow-blue-950/20"
-                      : "border-white/10 bg-white/[.015] hover:-translate-y-0.5 hover:border-white/20"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-semibold uppercase tracking-wider text-blue-300">
-                      {p.short}
-                    </span>
-                    <span className="text-[9px] text-gray-600">
-                      {active ? "SELECTED" : "SELECT"}
-                    </span>
+          <div className="grid gap-4 md:grid-cols-3">
+            {platforms.map((platform) => (
+              <div
+                key={platform.title}
+                className={`group rounded-2xl border p-6 transition ${
+                  platform.live
+                    ? "border-cyan-400/20 bg-gradient-to-br from-cyan-400/[0.07] to-blue-500/[0.02] hover:border-cyan-300/35"
+                    : "border-white/10 bg-white/[0.018] opacity-70"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-black/20 font-mono text-xs font-bold text-gray-300">
+                    {platform.icon}
                   </div>
-                  <h3 className="mt-3 text-sm font-semibold">{p.name}</h3>
-                  <p className="mt-2 text-[10px] leading-5 text-gray-500">
-                    {p.description}
-                  </p>
-                </button>
-              );
-            })}
+
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-[8px] font-semibold uppercase tracking-widest ${
+                      platform.live
+                        ? "bg-cyan-400/10 text-cyan-300"
+                        : "bg-white/5 text-gray-600"
+                    }`}
+                  >
+                    {platform.live ? "Live" : "Soon"}
+                  </span>
+                </div>
+
+                <h3 className="mt-6 text-lg font-semibold">
+                  {platform.title}
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-gray-500">
+                  {platform.description}
+                </p>
+
+                {platform.live && (
+                  <Link
+                    href="/labs/aws-vpc"
+                    className="mt-6 flex items-center justify-between rounded-lg border border-cyan-400/15 bg-cyan-400/[0.04] px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-cyan-300 transition hover:border-cyan-400/30 hover:bg-cyan-400/[0.08]"
+                  >
+                    Open networking lab
+                    <span>→</span>
+                  </Link>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {!activePattern ? (
-        <section className="mx-auto max-w-7xl px-6 py-16">
-          <div className="rounded-2xl border border-dashed border-white/10 bg-white/[.01] p-14 text-center">
-            <div className="text-4xl text-gray-700">◇</div>
-            <h3 className="mt-4 text-sm font-semibold">Choose a pattern to begin</h3>
-            <p className="mx-auto mt-2 max-w-lg text-xs leading-6 text-gray-600">
-              The inventory intentionally contains plausible alternatives and decoys.
-              The selected architecture pattern determines which choices are valid.
+      {/* Assessments */}
+      <section
+        id="labs"
+        className="relative scroll-mt-20"
+      >
+        <div className="mx-auto max-w-7xl px-6 py-24">
+          <div className="mb-10 max-w-3xl">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-cyan-400">
+              Simulation Labs
+            </p>
+
+            <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
+              Real engineering decisions.
+            </h2>
+
+            <p className="mt-4 text-sm leading-7 text-gray-500">
+              Multiple production architectures can be valid. The candidate
+              must reason about requirements, trade-offs and topology—not just
+              click a predetermined answer.
             </p>
           </div>
-        </section>
-      ) : (
-        <section className="mx-auto grid max-w-7xl gap-6 px-6 py-7 lg:grid-cols-[360px_1fr]">
-          <aside>
-            <div className="mb-4 flex justify-between">
-              <div>
-                <h2 className="text-sm font-semibold">Component Inventory</h2>
-                <p className="mt-1 text-[11px] text-gray-500">
-                  Select the resources you believe belong in the architecture.
-                </p>
-              </div>
-              <span className="text-[10px] text-gray-600">
-                {selected.length}/{inventory.length}
-              </span>
-            </div>
 
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search resources..."
-              className="mb-4 w-full rounded-lg border border-white/10 bg-white/[.02] px-3 py-2.5 text-xs outline-none placeholder:text-gray-600"
+          {/* Four assessment cards */}
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            {labs.map((lab) => (
+              <article
+                key={lab.number}
+                className={`group relative overflow-hidden rounded-2xl border p-7 transition ${
+                  lab.available
+                    ? "border-cyan-400/20 bg-gradient-to-b from-cyan-400/[0.05] to-[#080d15] hover:-translate-y-1 hover:border-cyan-300/35 hover:shadow-2xl hover:shadow-cyan-500/[0.06]"
+                    : "border-white/10 bg-white/[0.015] opacity-65"
+                }`}
+              >
+                <div className="absolute right-0 top-0 h-32 w-32 rounded-full bg-blue-500/10 blur-3xl transition group-hover:bg-cyan-400/10" />
+
+                <div className="relative flex min-h-[510px] flex-col">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs text-cyan-400">
+                      LAB_{lab.number}
+                    </span>
+
+                    <span className="text-[8px] uppercase tracking-[0.2em] text-gray-600">
+                      {lab.available ? "LIVE" : "LOCKED"}
+                    </span>
+                  </div>
+
+                  <div className="mt-8 flex flex-wrap gap-2">
+                    <Badge>{lab.category}</Badge>
+                    <Badge>{lab.difficulty}</Badge>
+                  </div>
+
+                  <h3 className="mt-5 min-h-[58px] text-xl font-semibold leading-7">
+                    {lab.title}
+                  </h3>
+
+                  <p className="mt-4 min-h-[120px] text-sm leading-6 text-gray-500">
+                    {lab.description}
+                  </p>
+
+                  <div className="mt-6 flex flex-wrap gap-5 text-[9px] uppercase tracking-wider text-gray-600">
+                    <span>◷ {lab.time}</span>
+
+                    {lab.available && (
+                      <span>● Practice enabled</span>
+                    )}
+                  </div>
+
+                  <div className="mt-6 flex min-h-[30px] flex-wrap gap-2">
+                    {lab.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-md border border-white/10 px-2.5 py-1 text-[9px] text-gray-500"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="mt-auto pt-8">
+                    {lab.available ? (
+                      <Link
+                        href={lab.href}
+                        className="flex w-full items-center justify-between rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-3.5 text-xs font-bold text-[#021018] shadow-lg shadow-cyan-500/10 transition hover:from-cyan-300 hover:to-blue-400"
+                      >
+                        Start Assessment
+
+                        <span className="transition group-hover:translate-x-1">
+                          →
+                        </span>
+                      </Link>
+                    ) : (
+                      <div className="rounded-xl border border-white/10 px-4 py-3.5 text-center text-xs text-gray-600">
+                        Assessment unavailable
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* About */}
+      <section
+        id="about"
+        className="border-t border-white/[0.07] bg-white/[0.012]"
+      >
+        <div className="mx-auto max-w-5xl px-6 py-24 text-center">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-cyan-400">
+            CloudOps SimLab
+          </p>
+
+          <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
+            Built to expose engineering judgment.
+          </h2>
+
+          <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-gray-500">
+            The goal is not to memorize service names. It is to turn
+            requirements into resilient, secure and explainable infrastructure.
+          </p>
+
+          <div className="mt-10 grid gap-3 text-left sm:grid-cols-3">
+            <MiniFeature
+              n="01"
+              title="Reason"
+              text="Interpret constraints before touching resources."
             />
 
-            <div className="max-h-[760px] space-y-5 overflow-y-auto pr-2">
-              {visible.map((section) => (
-                <div key={section.label}>
-                  <p className="mb-2 text-[10px] font-semibold tracking-[.16em] text-gray-600">
-                    {section.label}
-                  </p>
-                  <div className="space-y-1.5">
-                    {section.items.map((c) => {
-                      const active = selected.includes(c.id);
-                      return (
-                        <button
-                          key={c.id}
-                          onClick={() => clickItem(c.id)}
-                          className={`w-full rounded-md border px-3 py-2.5 text-left transition ${
-                            active
-                              ? "border-blue-400/50 bg-blue-500/[.07]"
-                              : "border-white/[.07] bg-white/[.015] hover:border-white/20"
-                          }`}
-                        >
-                          <div className="flex justify-between gap-2">
-                            <span className="text-xs font-medium">{c.name}</span>
-                            <span
-                              className={`text-[9px] uppercase ${
-                                active ? "text-blue-400" : "text-gray-700"
-                              }`}
-                            >
-                              {active ? "Selected" : "Add"}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-[10px] text-gray-600">
-                            {c.description}
-                          </p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </aside>
+            <MiniFeature
+              n="02"
+              title="Design"
+              text="Choose a viable production architecture."
+            />
 
-          <div>
-            <div className="mb-3 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-              <div>
-                <h2 className="text-sm font-semibold">Architecture Canvas</h2>
-                <p className="mt-1 text-[10px] text-gray-600">
-                  VPC: 10.0.0.0/16 · Region: us-east-1 · Pattern: {activePattern.name}
-                </p>
-              </div>
-              <button
-                disabled={selected.length < 2}
-                onClick={() => {
-                  setConnect(!connect);
-                  setFirst(null);
-                }}
-                className={`rounded-lg border px-4 py-2 text-xs ${
-                  connect
-                    ? "border-blue-400/50 bg-blue-500/10 text-blue-300"
-                    : "border-white/10 text-gray-400"
-                } disabled:opacity-40`}
-              >
-                {connect ? "Exit Connect Mode" : "Connect Components"}
-              </button>
-            </div>
-
-            {connect && (
-              <div className="mb-3 rounded-lg border border-blue-400/20 bg-blue-400/[.04] px-4 py-3 text-[11px] text-blue-200">
-                {first
-                  ? `Selected: ${name(first)}. Now select the second component.`
-                  : "Select the first component, then the second."}
-              </div>
-            )}
-
-            <div className="min-h-[500px] rounded-xl border border-white/10 bg-[#0b111b] p-5">
-              <div className="rounded-lg border border-blue-400/15 bg-blue-400/[.015] p-5">
-                <div className="flex justify-between">
-                  <div>
-                    <span className="font-mono text-[10px] text-blue-400">AWS_VPC</span>
-                    <h3 className="mt-1 text-sm font-semibold">10.0.0.0/16</h3>
-                  </div>
-                  <span className="rounded border border-white/10 px-2 py-1 text-[9px] text-gray-600">
-                    us-east-1
-                  </span>
-                </div>
-
-                {selected.length === 0 ? (
-                  <div className="flex min-h-[390px] items-center justify-center text-center">
-                    <div>
-                      <div className="text-4xl text-gray-700">⌘</div>
-                      <p className="mt-3 text-xs text-gray-500">
-                        Select resources from the inventory to build your architecture.
-                      </p>
-                      <p className="mt-1 text-[10px] text-gray-700">
-                        Incorrect selections are not highlighted before submission.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {selected.map((id) => {
-                      const c = inventory.find((x) => x.id === id)!;
-                      return (
-                        <div
-                          key={id}
-                          onClick={() => clickItem(id)}
-                          className={`cursor-pointer rounded-lg border p-4 ${
-                            first === id
-                              ? "border-blue-400/60 bg-blue-500/[.08]"
-                              : "border-white/10 bg-white/[.015] hover:border-white/20"
-                          }`}
-                        >
-                          <div className="flex justify-between">
-                            <div>
-                              <p className="text-xs font-medium">{c.name}</p>
-                              <p className="mt-1 text-[9px] uppercase text-gray-700">
-                                {c.group}
-                              </p>
-                            </div>
-                            {!connect && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  remove(id);
-                                }}
-                                className="text-[9px] text-gray-700 hover:text-white"
-                              >
-                                Remove
-                              </button>
-                            )}
-                          </div>
-                          <p className="mt-3 text-[10px] text-gray-600">
-                            {c.description}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {links.length > 0 && (
-                  <div className="mt-5 border-t border-white/[.06] pt-4">
-                    <p className="mb-2 text-[10px] uppercase tracking-wider text-gray-600">
-                      Connections
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {links.map((l, i) => {
-                        const correct = activePattern.links.some(
-                          ([a, b]) => pairKey(a, b) === pairKey(l.from, l.to)
-                        );
-                        return (
-                          <span
-                            key={i}
-                            className={`rounded-md border px-3 py-2 text-[10px] ${
-                              correct
-                                ? "border-emerald-500/20 text-gray-500"
-                                : "border-white/10 text-gray-500"
-                            }`}
-                          >
-                            {name(l.from)} → {name(l.to)}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-5 rounded-xl border border-white/10 bg-[#0b111b] p-5">
-              <div className="flex justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold">Architecture Decisions</h2>
-                  <p className="mt-1 text-[10px] text-gray-600">
-                    Questions are evaluated against your selected pattern.
-                  </p>
-                </div>
-                <span className="text-[10px] text-gray-600">
-                  {Object.keys(answers).length}/5
-                </span>
-              </div>
-
-              <div className="mt-4 space-y-2">
-                {Object.keys(decisionOptions).map((key, i) => (
-                  <label
-                    key={key}
-                    className="block rounded-lg border border-white/[.07] p-3"
-                  >
-                    <span className="text-[11px]">
-                      {i + 1}. {decisionLabel(key)}
-                    </span>
-                    <select
-                      value={answers[key] || ""}
-                      onChange={(e) =>
-                        setAnswers((x) => ({ ...x, [key]: e.target.value }))
-                      }
-                      className="mt-2 w-full rounded-md border border-white/10 bg-[#0b111b] px-3 py-2 text-[10px] text-gray-300"
-                    >
-                      <option value="">Select an answer</option>
-                      {decisionOptions[key].map((o) => (
-                        <option key={o}>{o}</option>
-                      ))}
-                    </select>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-blue-400/20 bg-blue-400/[.03] p-4">
-                <p className="text-[10px] font-semibold text-blue-300">
-                  Candidate Workflow
-                </p>
-                <ol className="mt-2 space-y-1 text-[10px] text-gray-500">
-                  <li>01 — Choose an architecture pattern.</li>
-                  <li>02 — Select the resources you would deploy.</li>
-                  <li>03 — Connect the major relationships.</li>
-                  <li>04 — Answer the architecture decisions.</li>
-                  <li>05 — Submit and review the score.</li>
-                </ol>
-              </div>
-
-              <div className="rounded-xl border border-amber-400/20 bg-amber-400/[.025] p-4">
-                <p className="text-[10px] font-semibold text-amber-300">
-                  Assessment Rules
-                </p>
-                <ul className="mt-2 space-y-1 text-[10px] text-gray-500">
-                  <li>• Multiple production patterns are valid.</li>
-                  <li>• Decoy resources intentionally remain in the inventory.</li>
-                  <li>• No correctness feedback is shown before submission.</li>
-                  <li>• This is currently practice mode — submit as many times as needed.</li>
-                </ul>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setSubmitted(true)}
-              className="mt-5 w-full rounded-lg bg-blue-500 px-5 py-3 text-xs font-semibold shadow-lg shadow-blue-950/20 transition hover:bg-blue-400"
-            >
-              Submit Architecture — Practice Attempt
-            </button>
+            <MiniFeature
+              n="03"
+              title="Defend"
+              text="Submit a topology that survives validation."
+            />
           </div>
-        </section>
-      )}
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-white/[0.07] px-6 py-7">
+        <div className="mx-auto flex max-w-7xl items-center justify-between text-[9px] uppercase tracking-[0.18em] text-gray-600">
+          <span>CloudOps SimLab</span>
+
+          <span>Infrastructure • DevOps • SRE</span>
+        </div>
+      </footer>
     </main>
   );
 }
 
-function name(id: string) {
-  return inventory.find((x) => x.id === id)?.name ?? id;
-}
+/* -------------------------------------------------------------------------- */
+/* Components                                                                 */
+/* -------------------------------------------------------------------------- */
 
-function decisionLabel(key: string) {
-  const labels: Record<string, string> = {
-    entry: "What should be the Internet-facing API entry point?",
-    compute: "Where should application workloads run?",
-    admin: "How should administrators access private workloads?",
-    outbound: "How should private workloads obtain outbound connectivity?",
-    public: "What should be publicly reachable from the Internet?",
-  };
-  return labels[key] ?? key;
-}
-
-function Header({
-  locked,
-  pattern,
-}: {
-  locked?: boolean;
-  pattern?: string;
-}) {
+function ArchitecturePreview() {
   return (
-    <header className="border-b border-white/10">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-        <div>
-          <a href="/" className="text-[10px] text-gray-600 hover:text-white">
-            ← CloudOps SimLab
-          </a>
-          <h1 className="mt-1 text-sm font-semibold">
-            AWS VPC Architecture Assessment
-          </h1>
-          {pattern && (
-            <p className="mt-1 text-[9px] uppercase tracking-wider text-blue-400">
-              {pattern}
-            </p>
-          )}
+    <div className="relative mx-auto w-full max-w-xl">
+      <div className="absolute -inset-5 rounded-[2rem] bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-indigo-500/10 blur-2xl" />
+
+      <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[#07101a]/90 p-5 shadow-2xl shadow-black/40 backdrop-blur-xl">
+        <div className="flex items-center justify-between border-b border-white/10 pb-4">
+          <div>
+            <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-400">
+              LIVE PREVIEW
+            </div>
+
+            <div className="mt-1 text-sm font-semibold">
+              Production API topology
+            </div>
+          </div>
+
+          <div className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-2.5 py-1 text-[8px] text-emerald-300">
+            DESIGN MODE
+          </div>
         </div>
 
-        <span
-          className={`rounded-full border px-3 py-1 text-[10px] uppercase ${
-            locked
-              ? "border-white/10 text-gray-500"
-              : "border-emerald-400/20 text-emerald-300"
-          }`}
-        >
-          {locked ? "Submitted" : "Practice Mode"}
-        </span>
+        <div className="relative mt-5 h-[330px]">
+          <div className="absolute inset-5 rounded-2xl border border-cyan-400/15 bg-cyan-400/[0.015]" />
+
+          <Node
+            x="6%"
+            y="42%"
+            label="INTERNET"
+            small
+          />
+
+          <Node
+            x="31%"
+            y="22%"
+            label="API GATEWAY"
+          />
+
+          <Node
+            x="31%"
+            y="62%"
+            label="ALB"
+          />
+
+          <Node
+            x="64%"
+            y="22%"
+            label="LAMBDA"
+          />
+
+          <Node
+            x="64%"
+            y="62%"
+            label="ECS / EC2"
+          />
+
+          <Node
+            x="82%"
+            y="42%"
+            label="PRIVATE DATA"
+            small
+          />
+
+          <div className="absolute left-[19%] top-[48%] h-px w-[12%] bg-gradient-to-r from-cyan-400/0 via-cyan-400/60 to-cyan-400/0" />
+
+          <div className="absolute left-[47%] top-[34%] h-px w-[17%] rotate-[-24deg] bg-gradient-to-r from-blue-400/0 via-blue-400/60 to-blue-400/0" />
+
+          <div className="absolute left-[47%] top-[65%] h-px w-[17%] rotate-[20deg] bg-gradient-to-r from-blue-400/0 via-blue-400/60 to-blue-400/0" />
+
+          <div className="absolute left-[75%] top-[43%] h-px w-[10%] bg-gradient-to-r from-indigo-400/0 via-indigo-400/60 to-indigo-400/0" />
+
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 font-mono text-[8px] uppercase tracking-[0.18em] text-gray-700">
+            multiple valid patterns
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 border-t border-white/10 pt-4">
+          <Stat
+            value="04"
+            label="patterns"
+          />
+
+          <Stat
+            value="AZ"
+            label="resilience"
+          />
+
+          <Stat
+            value="IAM"
+            label="security"
+          />
+        </div>
       </div>
-    </header>
-  );
-}
-
-function Requirement({ label }: { label: string }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[.015] px-3 py-2.5">
-      <span className="text-blue-400">✓</span>
-      <span className="text-[10px] text-gray-400">{label}</span>
     </div>
   );
 }
 
-function ScoreCard({
+function Node({
+  x,
+  y,
   label,
-  value,
-  warning,
+  small,
 }: {
+  x: string;
+  y: string;
   label: string;
-  value: string;
-  warning?: boolean;
-}) {
-  return (
-    <div className={`rounded-xl border p-4 ${warning ? "border-amber-400/20 bg-amber-400/[.025]" : "border-white/10 bg-white/[.015]"}`}>
-      <p className="text-[9px] uppercase tracking-wider text-gray-600">{label}</p>
-      <p className={`mt-2 text-base font-semibold ${warning ? "text-amber-300" : "text-gray-200"}`}>{value}</p>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-white/10 bg-[#0b111b] p-4">
-      <p className="text-[9px] uppercase tracking-wider text-gray-600">{label}</p>
-      <p className="mt-2 text-sm font-semibold">{value}</p>
-    </div>
-  );
-}
-
-function Panel({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-xl border border-white/10 bg-[#0b111b] p-4">
-      <h2 className="text-xs font-semibold">{title}</h2>
-      <div className="mt-3">{children}</div>
-    </section>
-  );
-}
-
-function Finding({
-  ok,
-  children,
-}: {
-  ok: boolean;
-  children: React.ReactNode;
+  small?: boolean;
 }) {
   return (
     <div
-      className={`mb-2 rounded-md border px-3 py-2.5 text-[10px] ${
-        ok
-          ? "border-emerald-500/20 text-emerald-300"
-          : "border-red-500/20 text-red-300"
-      }`}
+      className="absolute -translate-x-1/2 -translate-y-1/2 rounded-xl border border-white/10 bg-[#0a1420] px-3 py-2 shadow-lg"
+      style={{
+        left: x,
+        top: y,
+      }}
     >
-      {ok ? "✓" : "×"} {children}
+      <div
+        className={`font-mono font-semibold ${
+          small
+            ? "text-[7px] text-gray-500"
+            : "text-[8px] text-gray-300"
+        }`}
+      >
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function Badge({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <span className="rounded-md border border-white/10 bg-white/[0.025] px-2.5 py-1 text-[8px] font-semibold uppercase tracking-wider text-gray-500">
+      {children}
+    </span>
+  );
+}
+
+function MiniFeature({
+  n,
+  title,
+  text,
+}: {
+  n: string;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.018] p-5">
+      <div className="font-mono text-[9px] text-cyan-400">
+        {n}
+      </div>
+
+      <div className="mt-3 font-semibold">
+        {title}
+      </div>
+
+      <div className="mt-2 text-xs leading-5 text-gray-600">
+        {text}
+      </div>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
+      <div className="font-mono text-sm font-semibold text-gray-200">
+        {value}
+      </div>
+
+      <div className="mt-1 text-[8px] uppercase tracking-[0.18em] text-gray-600">
+        {label}
+      </div>
     </div>
   );
 }
