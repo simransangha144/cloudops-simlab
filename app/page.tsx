@@ -287,15 +287,13 @@ export default function Home() {
             </p>
 
             <div className="mt-9 flex flex-wrap gap-3">
-              <Link
-                href="/labs/aws-vpc"
-                className="group flex items-center gap-4 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-6 py-3.5 text-sm font-bold text-[#021018] shadow-xl shadow-cyan-500/10 transition hover:-translate-y-0.5 hover:shadow-cyan-500/20"
+            <a
+              href="#labs"
+              className="group flex items-center gap-4 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-6 py-3.5 text-sm font-bold text-[#021018] shadow-xl shadow-cyan-500/10 transition hover:-translate-y-0.5 hover:shadow-cyan-500/20"
               >
-                Start Assessment
-                <span className="transition group-hover:translate-x-1">
-                  →
-                </span>
-              </Link>
+              Start Assessment
+               <span className="transition group-hover:translate-x-1">→</span>
+              </a>
 
               <a
                 href="#labs"
