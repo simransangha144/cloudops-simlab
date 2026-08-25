@@ -226,4 +226,3 @@ function Requirement({label}:{label:string}){return <div className="flex items-c
 function Stat({label,value}:{label:string;value:string}){return <div className="rounded-lg border border-white/10 bg-[#0b111b] p-4"><p className="text-[9px] uppercase tracking-wider text-gray-600">{label}</p><p className="mt-2 text-sm font-semibold">{value}</p></div>}
 function Panel({title,children}:{title:string;children:React.ReactNode}){return <section className="rounded-xl border border-white/10 bg-[#0b111b] p-4"><h2 className="text-xs font-semibold">{title}</h2><div className="mt-3">{children}</div></section>}
 function Finding({ok,children}:{ok:boolean;children:React.ReactNode}){return <div className={`mb-2 rounded-md border px-3 py-2.5 text-[10px] ${ok?"border-emerald-500/20 text-emerald-300":"border-red-500/20 text-red-300"}`}>{ok?"✓":"×"} {children}</div>}
-
