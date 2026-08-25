@@ -42,24 +42,24 @@ const labs: Lab[] = [
     title: "CI/CD Pipeline",
     category: "DEVOPS",
     difficulty: "ADVANCED",
-    time: "Coming soon",
+    time: "20–30 min",
     description:
       "Design source control, build, test, deployment and production promotion workflows.",
     tags: ["GitHub Actions", "CI/CD", "DevOps"],
-    href: "#",
-    available: false,
+    href: "/labs/cicd",
+    available: true,
   },
   {
     number: "04",
     title: "Kubernetes Deployment",
     category: "CONTAINERS",
     difficulty: "ADVANCED",
-    time: "Coming soon",
+    time: "20–30 min",
     description:
       "Work with deployments, services, ingress, scaling and rolling deployments.",
     tags: ["Kubernetes", "Containers", "SRE"],
-    href: "#",
-    available: false,
+    href: "/labs/kubernetes",
+    available: true,
   },
 ];
 
