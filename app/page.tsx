@@ -220,11 +220,11 @@ export default function Home() {
 
             <div>
               <div className="font-semibold tracking-tight">
-                CloudOps SimLab
+                CloudForge Assessments
               </div>
 
               <div className="text-[9px] uppercase tracking-[0.24em] text-gray-500">
-                Cloud Engineering Simulator
+                Cloud Infrastructure Engineering Assessments
               </div>
             </div>
           </Link>
@@ -529,7 +529,7 @@ export default function Home() {
       >
         <div className="mx-auto max-w-4xl px-6 py-24 text-center">
           <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-cyan-300">
-            CloudOps SimLab
+            CloudForge Assessments
           </div>
 
           <h2 className="mt-5 text-4xl font-bold tracking-[-0.04em] sm:text-5xl">
@@ -537,7 +537,7 @@ export default function Home() {
           </h2>
 
           <p className="mx-auto mt-6 max-w-2xl text-base leading-8 text-gray-500">
-            CloudOps SimLab focuses on the decisions engineers make when
+            CloudForge Assessments focuses on the decisions engineers make when
             designing real infrastructure: availability, security,
             networking, scalability, operational access and infrastructure
             as code.
@@ -557,7 +557,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-white/[0.07]">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-8 text-[9px] uppercase tracking-[0.16em] text-gray-700 sm:flex-row sm:items-center sm:justify-between">
-          <span>CloudOps SimLab</span>
+          <span>CloudForge Assessments</span>
 
           <span>
             AWS LIVE · AZURE / GCP NEXT · PRODUCTION PATTERNS
