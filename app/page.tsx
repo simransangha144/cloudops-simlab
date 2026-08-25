@@ -289,228 +289,266 @@ function TopologyNode({
 
 function DynamicTopology() {
   const [patternIndex, setPatternIndex] = useState(0);
-  const [traffic, setTraffic] = useState(0);
-  const [packet, setPacket] = useState(0);
+  const [trafficPhase, setTrafficPhase] = useState(0);
+  const [requests, setRequests] = useState(127);
+  const [latency, setLatency] = useState(42);
+  const [azA, setAzA] = useState(61);
+  const [degraded, setDegraded] = useState(false);
 
   useEffect(() => {
     const patternTimer = window.setInterval(() => {
-      setPatternIndex((current) => (current + 1) % topologyPatterns.length);
-    }, 7000);
+      setPatternIndex((v) => (v + 1) % topologyPatterns.length);
+    }, 8500);
 
     const trafficTimer = window.setInterval(() => {
-      setTraffic((current) => (current + 1) % 4);
-    }, 1100);
+      setTrafficPhase((v) => (v + 1) % 4);
+    }, 900);
 
-    const packetTimer = window.setInterval(() => {
-      setPacket((current) => current + 1);
-    }, 650);
+    const telemetryTimer = window.setInterval(() => {
+      setRequests((v) => {
+        const delta = Math.floor(Math.random() * 13) - 6;
+        return Math.max(86, Math.min(178, v + delta));
+      });
+
+      setLatency((v) => {
+        const delta = Math.floor(Math.random() * 9) - 4;
+        return Math.max(27, Math.min(74, v + delta));
+      });
+
+      setDegraded((v) => {
+        if (Math.random() < 0.035) return !v;
+        return v;
+      });
+    }, 1200);
 
     return () => {
       window.clearInterval(patternTimer);
       window.clearInterval(trafficTimer);
-      window.clearInterval(packetTimer);
+      window.clearInterval(telemetryTimer);
     };
   }, []);
 
-  const pattern = topologyPatterns[patternIndex];
+  useEffect(() => {
+    const target = degraded ? 24 : 61;
 
-  const trafficLabel =
-    traffic === 0
-      ? "REQUEST"
-      : traffic === 1
+    setAzA((current) => {
+      const diff = target - current;
+      if (Math.abs(diff) < 2) return target;
+      return current + Math.sign(diff) * 2;
+    });
+  }, [degraded, trafficPhase]);
+
+  const pattern = topologyPatterns[patternIndex];
+  const azB = 100 - azA;
+
+  const stage =
+    trafficPhase === 0
+      ? "INBOUND"
+      : trafficPhase === 1
         ? "ROUTING"
-        : traffic === 2
-          ? "WORKLOAD"
+        : trafficPhase === 2
+          ? "PROCESSING"
           : "RESPONSE";
 
-  const internetActive = traffic === 0 || traffic === 3;
-  const edgeActive = traffic === 1 || traffic === 3;
-  const appAActive = traffic === 2 || traffic === 3;
-  const appBActive = traffic === 2;
-  const dataActive = traffic === 3;
+  const nodeActive = (node: string) => {
+    if (trafficPhase === 0) return node === "internet";
+    if (trafficPhase === 1) return node === "alb";
+    if (trafficPhase === 2) return node === "ecs";
+    return node === "data";
+  };
 
   return (
     <div className="relative">
       <style>{`
-        @keyframes cloudforgePacketFlow {
+        @keyframes forgeParticle {
           0% {
-            left: -8%;
+            left: -4%;
+            opacity: 0;
+            transform: scale(.45);
+          }
+          8% {
+            opacity: 1;
+          }
+          45% {
+            opacity: 1;
+            transform: scale(1);
+          }
+          92% {
+            opacity: .85;
+          }
+          100% {
+            left: 104%;
             opacity: 0;
             transform: scale(.55);
           }
-
-          10% {
-            opacity: 1;
-          }
-
-          50% {
-            opacity: 1;
-            transform: scale(1.15);
-          }
-
-          90% {
-            opacity: .8;
-          }
-
-          100% {
-            left: 108%;
-            opacity: 0;
-            transform: scale(.7);
-          }
         }
 
-        @keyframes cloudforgePacketFlowReverse {
+        @keyframes forgeParticleReverse {
           0% {
-            left: 108%;
+            left: 104%;
             opacity: 0;
-            transform: scale(.55);
           }
-
           10% {
             opacity: 1;
           }
-
-          50% {
-            opacity: 1;
-            transform: scale(1.15);
-          }
-
           90% {
             opacity: .8;
           }
-
           100% {
-            left: -8%;
+            left: -4%;
             opacity: 0;
-            transform: scale(.7);
           }
         }
 
-        @keyframes cloudforgeNodePulse {
-          0%, 100% {
-            box-shadow:
-              0 0 0 0 rgba(34,211,238,0),
-              inset 0 0 0 rgba(34,211,238,0);
+        @keyframes forgePulse {
+          0%,100% {
+            opacity: .45;
+            transform: scale(.8);
           }
+          50% {
+            opacity: 1;
+            transform: scale(1.25);
+          }
+        }
 
+        @keyframes forgeGlow {
+          0%,100% {
+            box-shadow: 0 0 0 0 rgba(34,211,238,0);
+          }
           50% {
             box-shadow:
-              0 0 34px 5px rgba(34,211,238,.18),
+              0 0 28px 5px rgba(34,211,238,.18),
               inset 0 0 24px rgba(34,211,238,.06);
           }
         }
 
-        @keyframes cloudforgeDataPulse {
-          0%, 100% {
-            box-shadow:
-              0 0 0 0 rgba(52,211,153,0),
-              inset 0 0 0 rgba(52,211,153,0);
+        @keyframes forgeGreenGlow {
+          0%,100% {
+            box-shadow: 0 0 0 0 rgba(52,211,153,0);
           }
-
           50% {
             box-shadow:
-              0 0 34px 5px rgba(52,211,153,.2),
-              inset 0 0 24px rgba(52,211,153,.08);
+              0 0 28px 5px rgba(52,211,153,.18),
+              inset 0 0 24px rgba(52,211,153,.06);
           }
         }
 
-        @keyframes cloudforgeSweep {
-          0% {
-            transform: translateX(-120%);
-          }
-
-          100% {
-            transform: translateX(520%);
-          }
+        @keyframes forgeGrid {
+          from { transform: translate(0,0); }
+          to { transform: translate(32px,32px); }
         }
 
-        @keyframes cloudforgeGrid {
-          0% {
-            transform: translate3d(0,0,0);
-          }
-
-          100% {
-            transform: translate3d(32px,32px,0);
-          }
+        @keyframes forgeScan {
+          from { transform: translateY(-100%); }
+          to { transform: translateY(500%); }
         }
 
-        @keyframes cloudforgeHeartbeat {
-          0%, 100% {
-            opacity: .45;
-            transform: scale(.85);
-          }
-
-          50% {
-            opacity: 1;
-            transform: scale(1.35);
-          }
+        @keyframes forgeSweep {
+          from { transform: translateX(-130%); }
+          to { transform: translateX(500%); }
         }
 
-        .cloudforge-node-active {
-          animation: cloudforgeNodePulse 1.1s ease-in-out infinite;
+        .forge-node {
+          transition:
+            opacity .45s ease,
+            transform .45s ease,
+            border-color .45s ease,
+            box-shadow .45s ease;
         }
 
-        .cloudforge-data-active {
-          animation: cloudforgeDataPulse 1.1s ease-in-out infinite;
+        .forge-node-active {
+          animation: forgeGlow 1s ease-in-out infinite;
         }
 
-        .cloudforge-grid-motion {
-          animation: cloudforgeGrid 10s linear infinite;
+        .forge-data-active {
+          animation: forgeGreenGlow 1s ease-in-out infinite;
         }
 
-        .cloudforge-motion {
-          will-change: transform, left, opacity;
+        .forge-particle {
+          will-change: left, opacity, transform;
+        }
+
+        .forge-grid {
+          animation: forgeGrid 9s linear infinite;
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .cloudforge-motion,
-          .cloudforge-node-active,
-          .cloudforge-data-active,
-          .cloudforge-grid-motion {
+          .forge-node-active,
+          .forge-data-active,
+          .forge-particle,
+          .forge-grid {
             animation: none !important;
           }
         }
       `}</style>
 
-      <div className="absolute -inset-10 rounded-full bg-cyan-500/[0.055] blur-3xl" />
+      <div className="absolute -inset-16 rounded-full bg-cyan-500/[0.045] blur-3xl" />
 
-      <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[#070c14]/95 p-5 shadow-2xl shadow-blue-950/30 backdrop-blur-xl">
+      <div className="relative overflow-hidden rounded-[30px] border border-cyan-400/10 bg-[#050a12]/95 p-5 shadow-2xl shadow-blue-950/40 backdrop-blur-xl">
 
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/[0.07] pb-4">
+        <div className="flex items-start justify-between border-b border-white/[0.07] pb-4">
           <div>
-            <div className="text-[9px] font-semibold uppercase tracking-[0.24em] text-cyan-300">
-              Live architecture engine
+            <div className="flex items-center gap-2">
+              <span
+                className="h-2 w-2 rounded-full bg-emerald-300"
+                style={{
+                  animation: "forgePulse .9s ease-in-out infinite",
+                }}
+              />
+              <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.25em] text-emerald-300">
+                Live infrastructure
+              </span>
             </div>
 
-            <div className="mt-2 text-sm font-semibold">
-              Production topology
+            <div className="mt-2 text-sm font-semibold text-white">
+              Production topology engine
             </div>
 
             <div className="mt-1 font-mono text-[8px] uppercase tracking-[0.18em] text-gray-600">
-              {pattern.subtitle} · PATTERN{" "}
-              {String(patternIndex + 1).padStart(2, "0")}/04
+              {pattern.name} · {pattern.subtitle}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/[0.06] px-3 py-1.5 text-[8px] uppercase tracking-[0.16em] text-emerald-300">
-            <span
-              className="h-1.5 w-1.5 rounded-full bg-emerald-300"
-              style={{
-                animation: "cloudforgeHeartbeat 1s ease-in-out infinite",
-              }}
-            />
-            Live traffic
+          <div className="text-right">
+            <div className="font-mono text-[8px] uppercase tracking-[0.18em] text-gray-600">
+              Current state
+            </div>
+            <div className="mt-1 font-mono text-[10px] font-semibold text-cyan-300">
+              {stage}
+            </div>
           </div>
         </div>
 
-        {/* Architecture canvas */}
-        <div className="relative mt-5 h-[330px] overflow-hidden rounded-2xl border border-cyan-400/10 bg-[#040a11]">
+        {/* Top telemetry */}
+        <div className="mt-4 grid grid-cols-4 gap-2">
+          {[
+            ["REQ/S", requests.toString()],
+            ["LATENCY", `${latency}ms`],
+            ["AZ-A", `${azA}%`],
+            ["AZ-B", `${azB}%`],
+          ].map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-xl border border-white/[0.07] bg-white/[0.018] px-3 py-2"
+            >
+              <div className="font-mono text-[7px] uppercase tracking-[0.18em] text-gray-600">
+                {label}
+              </div>
+              <div className="mt-1 font-mono text-sm font-semibold text-gray-200">
+                {value}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Topology */}
+        <div className="relative mt-4 h-[350px] overflow-hidden rounded-2xl border border-cyan-400/10 bg-[#030810]">
 
           {/* Moving grid */}
           <div className="absolute inset-0 overflow-hidden opacity-40">
             <div
-              className="cloudforge-grid-motion h-[calc(100%+32px)] w-[calc(100%+32px)]"
+              className="forge-grid h-[calc(100%+32px)] w-[calc(100%+32px)]"
               style={{
                 backgroundImage:
                   "linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px)",
@@ -519,24 +557,28 @@ function DynamicTopology() {
             />
           </div>
 
-          <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-cyan-400/[0.035] to-transparent" />
+          {/* Scan line */}
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-transparent via-cyan-300/[0.025] to-transparent"
+            style={{
+              animation: "forgeScan 5s linear infinite",
+            }}
+          />
 
-          <div className="absolute left-1/2 top-3 -translate-x-1/2 font-mono text-[7px] uppercase tracking-[0.28em] text-gray-700">
-            AWS PRODUCTION DESIGN SPACE
+          <div className="absolute left-1/2 top-3 -translate-x-1/2 whitespace-nowrap font-mono text-[7px] uppercase tracking-[0.3em] text-gray-700">
+            AWS · REAL-TIME ARCHITECTURE TELEMETRY
           </div>
 
           {/* Internet → ALB */}
-          <div className="absolute left-[20%] top-[50%] h-px w-[20%] bg-gradient-to-r from-cyan-400/20 via-cyan-400/70 to-cyan-300/30">
+          <div className="absolute left-[17%] top-[48%] h-px w-[22%] bg-gradient-to-r from-cyan-400/20 via-cyan-400/80 to-cyan-400/30">
 
-            {[0, 1, 2].map((i) => (
+            {[0,1,2,3,4].map((i) => (
               <span
-                key={`request-${packet}-${i}`}
-                className="cloudforge-motion absolute -top-[2px] h-1.5 w-7 rounded-full bg-cyan-300 shadow-[0_0_16px_rgba(103,232,249,.95)]"
+                key={`edge-${i}`}
+                className="forge-particle absolute -top-[2px] h-1.5 w-5 rounded-full bg-cyan-200 shadow-[0_0_14px_rgba(103,232,249,.95)]"
                 style={{
-                  animation: `cloudforgePacketFlow ${
-                    2.2 + i * 0.35
-                  }s linear infinite`,
-                  animationDelay: `${i * -0.7}s`,
+                  animation: `forgeParticle ${1.8 + i * .27}s linear infinite`,
+                  animationDelay: `${i * -.55}s`,
                 }}
               />
             ))}
@@ -544,19 +586,19 @@ function DynamicTopology() {
 
           {/* ALB → AZ-A */}
           <div
-            className={`absolute left-[48%] top-[43%] h-px w-[22%] rotate-[-24deg] bg-gradient-to-r from-cyan-400/70 to-blue-400/40 transition-opacity duration-500 ${
-              edgeActive ? "opacity-100" : "opacity-30"
+            className={`absolute left-[48%] top-[42%] h-px w-[22%] rotate-[-22deg] bg-gradient-to-r from-cyan-400/80 to-blue-400/30 transition-all duration-500 ${
+              nodeActive("alb") || nodeActive("ecs")
+                ? "opacity-100"
+                : "opacity-35"
             }`}
           >
-            {[0, 1].map((i) => (
+            {[0,1,2].map((i) => (
               <span
-                key={`a-${packet}-${i}`}
-                className="cloudforge-motion absolute -top-[2px] h-1.5 w-7 rounded-full bg-blue-300 shadow-[0_0_16px_rgba(147,197,253,.9)]"
+                key={`a-${i}`}
+                className="forge-particle absolute -top-[2px] h-1.5 w-5 rounded-full bg-blue-200 shadow-[0_0_14px_rgba(147,197,253,.9)]"
                 style={{
-                  animation: `cloudforgePacketFlow ${
-                    1.6 + i * 0.25
-                  }s linear infinite`,
-                  animationDelay: `${i * -0.8}s`,
+                  animation: `forgeParticle ${1.35 + i * .2}s linear infinite`,
+                  animationDelay: `${i * -.65}s`,
                 }}
               />
             ))}
@@ -564,178 +606,160 @@ function DynamicTopology() {
 
           {/* ALB → AZ-B */}
           <div
-            className={`absolute left-[48%] top-[57%] h-px w-[22%] rotate-[24deg] bg-gradient-to-r from-cyan-400/70 to-indigo-400/40 transition-opacity duration-500 ${
-              edgeActive ? "opacity-100" : "opacity-30"
+            className={`absolute left-[48%] top-[55%] h-px w-[22%] rotate-[22deg] bg-gradient-to-r from-cyan-400/80 to-indigo-400/30 transition-all duration-500 ${
+              nodeActive("alb") || nodeActive("ecs")
+                ? "opacity-100"
+                : "opacity-35"
             }`}
           >
-            {[0, 1].map((i) => (
+            {[0,1,2].map((i) => (
               <span
-                key={`b-${packet}-${i}`}
-                className="cloudforge-motion absolute -top-[2px] h-1.5 w-7 rounded-full bg-indigo-300 shadow-[0_0_16px_rgba(129,140,248,.9)]"
+                key={`b-${i}`}
+                className="forge-particle absolute -top-[2px] h-1.5 w-5 rounded-full bg-indigo-200 shadow-[0_0_14px_rgba(129,140,248,.9)]"
                 style={{
-                  animation: `cloudforgePacketFlow ${
-                    1.8 + i * 0.3
-                  }s linear infinite`,
-                  animationDelay: `${i * -0.95}s`,
+                  animation: `forgeParticle ${1.45 + i * .22}s linear infinite`,
+                  animationDelay: `${i * -.7}s`,
                 }}
               />
             ))}
           </div>
 
-          {/* ECS → Data */}
+          {/* AZ → Data */}
           <div
-            className={`absolute left-[70%] top-[50%] h-px w-[16%] bg-gradient-to-r from-blue-400/70 to-emerald-400/60 transition-opacity duration-500 ${
-              dataActive ? "opacity-100" : "opacity-30"
+            className={`absolute left-[69%] top-[49%] h-px w-[17%] bg-gradient-to-r from-blue-400/60 to-emerald-400/70 transition-opacity duration-500 ${
+              nodeActive("data") ? "opacity-100" : "opacity-30"
             }`}
           >
-            {[0, 1, 2].map((i) => (
+            {[0,1,2].map((i) => (
               <span
-                key={`data-${packet}-${i}`}
-                className="cloudforge-motion absolute -top-[2px] h-1.5 w-7 rounded-full bg-emerald-300 shadow-[0_0_16px_rgba(110,231,183,.9)]"
+                key={`data-${i}`}
+                className="forge-particle absolute -top-[2px] h-1.5 w-5 rounded-full bg-emerald-200 shadow-[0_0_15px_rgba(110,231,183,.95)]"
                 style={{
-                  animation: `cloudforgePacketFlow ${
-                    1.5 + i * 0.3
-                  }s linear infinite`,
-                  animationDelay: `${i * -0.65}s`,
+                  animation: `forgeParticle ${1.2 + i * .2}s linear infinite`,
+                  animationDelay: `${i * -.5}s`,
                 }}
               />
             ))}
           </div>
 
-          {/* Return traffic */}
-          {traffic === 3 && (
-            <div className="absolute left-[70%] top-[52%] h-px w-[16%] bg-gradient-to-r from-emerald-400/70 to-cyan-400/60">
-              <span
-                className="cloudforge-motion absolute -top-[2px] h-1.5 w-8 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,.9)]"
-                style={{
-                  animation:
-                    "cloudforgePacketFlowReverse 1.25s linear infinite",
-                }}
-              />
+          {/* Response path */}
+          {trafficPhase === 3 && (
+            <div className="absolute left-[69%] top-[53%] h-px w-[17%] bg-gradient-to-r from-emerald-300/70 to-cyan-300/60">
+              {[0,1].map((i) => (
+                <span
+                  key={`response-${i}`}
+                  className="forge-particle absolute -top-[2px] h-1.5 w-6 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,.95)]"
+                  style={{
+                    animation:
+                      `forgeParticleReverse ${1.1 + i * .25}s linear infinite`,
+                    animationDelay: `${i * -.45}s`,
+                  }}
+                />
+              ))}
             </div>
           )}
 
-          {/* Nodes */}
-          <div className={internetActive ? "cloudforge-node-active" : ""}>
-            <TopologyNode
-              className="left-[5%] top-[40%]"
-              title="INTERNET"
-              subtitle="PUBLIC"
-              tone="neutral"
-              active={internetActive}
-            />
-          </div>
+          {/* INTERNET */}
+          <TopologyNode
+            className="left-[4%] top-[38%]"
+            title="INTERNET"
+            subtitle="PUBLIC"
+            tone="neutral"
+            active={nodeActive("internet")}
+          />
 
-          <div className={edgeActive ? "cloudforge-node-active" : ""}>
-            <TopologyNode
-              className="left-[25%] top-[40%]"
-              title={pattern.edge}
-              subtitle="INGRESS"
-              tone="cyan"
-              active={edgeActive}
-            />
-          </div>
+          {/* ALB */}
+          <TopologyNode
+            className="left-[25%] top-[38%]"
+            title={pattern.edge}
+            subtitle="INGRESS"
+            tone="cyan"
+            active={nodeActive("alb")}
+          />
 
-          <div className={appAActive ? "cloudforge-node-active" : ""}>
-            <TopologyNode
-              className="right-[22%] top-[22%]"
-              title={pattern.appA}
-              subtitle="AZ-A"
-              tone="blue"
-              active={appAActive}
-            />
-          </div>
+          {/* AZ-A */}
+          <TopologyNode
+            className="right-[21%] top-[19%]"
+            title={pattern.appA}
+            subtitle={`AZ-A · ${azA}%`}
+            tone="blue"
+            active={nodeActive("ecs")}
+          />
 
-          <div className={appBActive ? "cloudforge-node-active" : ""}>
-            <TopologyNode
-              className="right-[22%] top-[58%]"
-              title={pattern.appB}
-              subtitle="AZ-B"
-              tone="blue"
-              active={appBActive}
-            />
-          </div>
+          {/* AZ-B */}
+          <TopologyNode
+            className="right-[21%] top-[59%]"
+            title={pattern.appB}
+            subtitle={`AZ-B · ${azB}%`}
+            tone="blue"
+            active={nodeActive("ecs")}
+          />
 
-          <div className={dataActive ? "cloudforge-data-active" : ""}>
-            <TopologyNode
-              className="right-[4%] top-[40%]"
-              title={pattern.data}
-              subtitle="PRIVATE"
-              tone="emerald"
-              active={dataActive}
-            />
-          </div>
+          {/* Data */}
+          <TopologyNode
+            className="right-[3%] top-[39%]"
+            title={pattern.data}
+            subtitle="PRIVATE DATA"
+            tone="emerald"
+            active={nodeActive("data")}
+          />
 
-          {/* Telemetry bar */}
-          <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between border-t border-white/[0.06] pt-3">
-
-            <div className="flex items-center gap-2 font-mono text-[7px] uppercase tracking-[0.18em] text-gray-600">
-              <span
-                className="h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(103,232,249,.9)]"
-                style={{
-                  animation:
-                    "cloudforgeHeartbeat .7s ease-in-out infinite",
-                }}
-              />
-              {trafficLabel}
+          {/* AZ health */}
+          <div className="absolute bottom-4 left-4 rounded-lg border border-white/[0.06] bg-black/30 px-3 py-2 backdrop-blur">
+            <div className="font-mono text-[7px] uppercase tracking-[0.18em] text-gray-600">
+              AZ-A
             </div>
-
-            <div className="overflow-hidden rounded-full border border-cyan-400/10 bg-cyan-400/[0.025] px-3 py-1 font-mono text-[7px] uppercase tracking-[0.16em] text-cyan-400">
-              <span key={`${pattern.name}-${traffic}`} className="inline-block">
-                {pattern.name} · {trafficLabel}
-              </span>
+            <div className={`mt-1 flex items-center gap-2 font-mono text-[8px] ${
+              degraded ? "text-amber-300" : "text-emerald-300"
+            }`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${
+                degraded ? "bg-amber-300" : "bg-emerald-300"
+              }`} />
+              {degraded ? "DEGRADED" : "HEALTHY"}
             </div>
+          </div>
 
-            <div className="font-mono text-[7px] uppercase tracking-[0.18em] text-emerald-400/70">
-              HEALTHY · {packet % 999}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-lg border border-white/[0.06] bg-black/30 px-3 py-2 text-center backdrop-blur">
+            <div className="font-mono text-[7px] uppercase tracking-[0.18em] text-gray-600">
+              LOAD BALANCER
+            </div>
+            <div className="mt-1 font-mono text-[8px] text-emerald-300">
+              ● HEALTHY
+            </div>
+          </div>
+
+          <div className="absolute bottom-4 right-4 rounded-lg border border-white/[0.06] bg-black/30 px-3 py-2 backdrop-blur">
+            <div className="font-mono text-[7px] uppercase tracking-[0.18em] text-gray-600">
+              DATA
+            </div>
+            <div className="mt-1 font-mono text-[8px] text-emerald-300">
+              ● HEALTHY
             </div>
           </div>
         </div>
 
-        {/* Architecture metrics */}
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          {pattern.stats.map((value, index) => (
-            <div
-              key={`${pattern.name}-${value}`}
-              className={`rounded-xl border p-4 transition-all duration-500 ${
-                index === traffic - 1
-                  ? "border-cyan-400/30 bg-cyan-400/[0.045] shadow-[0_0_24px_rgba(34,211,238,.06)]"
-                  : "border-white/[0.07] bg-white/[0.015]"
-              }`}
-            >
-              <div className="font-mono text-sm font-semibold text-gray-200">
-                {value}
-              </div>
-
-              <div className="mt-1 text-[8px] uppercase tracking-[0.15em] text-gray-600">
-                {index === 0
-                  ? "PATTERN"
-                  : index === 1
-                    ? "SECURITY"
-                    : "RESILIENCE"}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Pattern timeline */}
-        <div className="mt-3 flex items-center gap-2 overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.012] px-3 py-2">
+        {/* Bottom telemetry */}
+        <div className="mt-3 flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.012] px-3 py-2">
 
           <span className="font-mono text-[7px] uppercase tracking-[0.16em] text-gray-700">
-            Live architecture pattern
+            LIVE FLOW
           </span>
 
-          <div className="relative h-px flex-1 overflow-hidden bg-white/[0.05]">
+          <div className="relative h-1 flex-1 overflow-hidden rounded-full bg-white/[0.05]">
             <span
-              className="cloudforge-motion absolute left-0 top-0 h-px w-1/4 bg-gradient-to-r from-transparent via-cyan-400 to-transparent"
+              className="absolute left-0 top-0 h-full w-1/4 rounded-full bg-gradient-to-r from-transparent via-cyan-400 to-transparent"
               style={{
-                animation: "cloudforgeSweep 1.8s linear infinite",
+                animation: "forgeSweep 1.4s linear infinite",
               }}
             />
           </div>
 
-          <span className="font-mono text-[7px] uppercase tracking-[0.16em] text-cyan-400/70">
-            {patternIndex + 1}/4
+          <span className="font-mono text-[7px] uppercase tracking-[0.16em] text-cyan-400">
+            {stage}
+          </span>
+
+          <span className="font-mono text-[7px] uppercase tracking-[0.16em] text-gray-600">
+            PATTERN {String(patternIndex + 1).padStart(2, "0")}/04
           </span>
         </div>
       </div>
