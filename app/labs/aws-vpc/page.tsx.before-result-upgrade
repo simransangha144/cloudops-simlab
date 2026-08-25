@@ -300,10 +300,6 @@ export default function AwsVpcAssessment() {
         requiredLinks: 0,
         decisions: 0,
         decisionTotal: 5,
-        componentScore: 0,
-        connectionScore: 0,
-        decisionScore: 0,
-        penalties: 0,
         score: 0,
       };
     }
@@ -338,10 +334,6 @@ export default function AwsVpcAssessment() {
       requiredLinks: requiredLinks.length,
       decisions,
       decisionTotal: 5,
-      componentScore,
-      connectionScore,
-      decisionScore,
-      penalties,
       score: Math.max(
         0,
         Math.min(100, Math.round(componentScore + connectionScore + decisionScore - penalties))
@@ -394,17 +386,6 @@ export default function AwsVpcAssessment() {
     setLinks((current) => current.filter((l) => l.from !== id && l.to !== id));
   }
 
-  function retryAssessment() {
-    setSelected([]);
-    setLinks([]);
-    setAnswers({});
-    setConnect(false);
-    setFirst(null);
-    setSubmitted(false);
-    setSearch("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
   const complete =
     !!activePattern &&
     evaluation.required === evaluation.requiredTotal &&
@@ -420,57 +401,30 @@ export default function AwsVpcAssessment() {
     return (
       <main className="min-h-screen bg-[#050810] text-white">
         <Header locked pattern={activePattern.name} />
-
-        <section className="border-b border-white/10 bg-[#070b13]">
+        <section className="border-b border-white/10">
           <div className="mx-auto max-w-6xl px-6 py-10">
-            <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
-              <div>
-                <p className="text-[10px] uppercase tracking-[.22em] text-blue-400">
-                  Architecture Result · LAB_01
-                </p>
-                <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
-                  {complete ? "Architecture accepted" : "Architecture submitted"}
-                </h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
-                  Review the architecture score, component selection, connections and
-                  engineering decisions for the <span className="text-gray-300">{activePattern.name}</span> pattern.
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-blue-400/20 bg-blue-500/[.04] px-6 py-4">
-                <p className="text-[9px] uppercase tracking-[.18em] text-blue-300">
-                  Selected pattern
-                </p>
-                <p className="mt-1 text-lg font-semibold">{activePattern.name}</p>
-              </div>
-            </div>
-
-            <div className="mt-7 rounded-2xl border border-white/10 bg-[#0b111b] p-6 sm:p-8">
-              <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
+            <p className="text-[10px] uppercase tracking-[.22em] text-blue-400">
+              Architecture Result
+            </p>
+            <div className="mt-3 rounded-2xl border border-white/10 bg-[#0b111b] p-7">
+              <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
                 <div>
-                  <p className="text-7xl font-semibold tracking-[-.04em]">
+                  <p className="text-6xl font-semibold tracking-tight">
                     {evaluation.score}
-                    <span className="ml-2 text-lg text-gray-600">/ 100</span>
+                    <span className="ml-2 text-sm text-gray-600">/ 100</span>
                   </p>
-                  <p className="mt-2 text-xs uppercase tracking-[.16em] text-gray-600">
-                    Final architecture score
-                  </p>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-white/[.02] px-5 py-4 text-right">
-                  <p className="text-[9px] uppercase tracking-wider text-gray-600">
-                    Assessment mode
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-emerald-300">
-                    Practice · Unlimited Attempts
+                  <p className="mt-2 text-sm text-gray-400">
+                    {complete
+                      ? "Architecture satisfies the selected production pattern."
+                      : "Architecture submitted for evaluation."}
                   </p>
                 </div>
-              </div>
-
-              <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <ScoreCard label="Component selection" value={`${Math.round(evaluation.componentScore)} / 35`} />
-                <ScoreCard label="Network connections" value={`${Math.round(evaluation.connectionScore)} / 40`} />
-                <ScoreCard label="Architecture decisions" value={`${Math.round(evaluation.decisionScore)} / 25`} />
-                <ScoreCard label="Penalties" value={`-${Math.round(evaluation.penalties)}`} warning={evaluation.penalties > 0} />
+                <div className="rounded-xl border border-blue-400/20 bg-blue-500/[.04] px-4 py-3">
+                  <p className="text-[9px] uppercase tracking-wider text-blue-300">
+                    Selected pattern
+                  </p>
+                  <p className="mt-1 text-sm font-semibold">{activePattern.name}</p>
+                </div>
               </div>
             </div>
 
@@ -503,67 +457,54 @@ export default function AwsVpcAssessment() {
           </Panel>
 
           <Panel title="Submitted Components">
-            {selected.length === 0 ? (
-              <p className="text-xs text-gray-600">No components were selected.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {selected.map((id) => {
-                  const required = activePattern.required.includes(id);
-                  const forbidden = activePattern.forbidden.includes(id);
-                  return (
-                    <div
-                      key={id}
-                      className={`rounded-md border px-3 py-2 text-[10px] ${
-                        forbidden
-                          ? "border-red-500/30 text-red-300"
-                          : required
-                            ? "border-emerald-500/30 text-emerald-300"
-                            : "border-amber-500/30 text-amber-300"
-                      }`}
-                    >
-                      {forbidden ? "×" : required ? "✓" : "•"} {name(id)}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <div className="space-y-1.5">
+              {selected.map((id) => {
+                const required = activePattern.required.includes(id);
+                const forbidden = activePattern.forbidden.includes(id);
+                return (
+                  <div
+                    key={id}
+                    className={`rounded-md border px-3 py-2 text-[10px] ${
+                      forbidden
+                        ? "border-red-500/30 text-red-300"
+                        : required
+                          ? "border-emerald-500/30 text-emerald-300"
+                          : "border-amber-500/30 text-amber-300"
+                    }`}
+                  >
+                    {forbidden ? "×" : required ? "✓" : "•"} {name(id)}
+                  </div>
+                );
+              })}
+            </div>
           </Panel>
 
           <div className="md:col-span-2">
             <Panel title="Architecture Decision Results">
-              <div className="space-y-2">
-                {Object.entries(activePattern.decisions).map(([key, expected]) => {
-                  const answer = answers[key] || "Not answered";
-                  const ok = answer === expected;
-                  return (
-                    <div
-                      key={key}
-                      className={`rounded-lg border p-4 ${
-                        ok
-                          ? "border-emerald-500/20 bg-emerald-500/[.02]"
-                          : "border-red-500/20 bg-red-500/[.02]"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <p className="text-xs font-medium">
-                          {ok ? "✓" : "×"} {decisionLabel(key)}
-                        </p>
-                        <span className={`text-[9px] uppercase tracking-wider ${ok ? "text-emerald-300" : "text-red-300"}`}>
-                          {ok ? "Correct" : "Review"}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-[10px] text-gray-500">
-                        Your answer: <span className="text-gray-300">{answer}</span>
+              {Object.entries(activePattern.decisions).map(([key, expected]) => {
+                const answer = answers[key] || "Not answered";
+                const ok = answer === expected;
+                return (
+                  <div
+                    key={key}
+                    className={`mb-2 rounded-lg border p-3 ${
+                      ok ? "border-emerald-500/20" : "border-red-500/20"
+                    }`}
+                  >
+                    <p className="text-[10px]">
+                      {ok ? "✓" : "×"} {decisionLabel(key)}
+                    </p>
+                    <p className="mt-1 text-[10px] text-gray-600">
+                      Your answer: {answer}
+                    </p>
+                    {!ok && (
+                      <p className="mt-1 text-[10px] text-gray-600">
+                        Expected for {activePattern.name}: {expected}
                       </p>
-                      {!ok && (
-                        <p className="mt-1 text-[10px] text-gray-500">
-                          Expected for {activePattern.name}: <span className="text-gray-300">{expected}</span>
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                    )}
+                  </div>
+                );
+              })}
             </Panel>
           </div>
 
@@ -575,40 +516,6 @@ export default function AwsVpcAssessment() {
               you chose for this scenario.
             </div>
           )}
-
-          <section className="md:col-span-2 rounded-2xl border border-blue-400/20 bg-blue-500/[.025] p-5">
-            <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-              <div>
-                <p className="text-[9px] font-semibold uppercase tracking-[.2em] text-blue-300">
-                  Assessment complete
-                </p>
-                <h3 className="mt-1 text-lg font-semibold">Ready for another architecture challenge?</h3>
-                <p className="mt-1 text-xs text-gray-500">
-                  Practice mode is unlimited. You can retry this VPC assessment or continue to the Terraform assessment.
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <a
-                  href="/#labs"
-                  className="rounded-lg border border-white/10 px-4 py-2.5 text-center text-xs font-semibold text-gray-300 transition hover:border-white/20 hover:bg-white/[.04] hover:text-white"
-                >
-                  ← Back to Assessments
-                </a>
-                <button
-                  onClick={retryAssessment}
-                  className="rounded-lg border border-blue-400/30 bg-blue-500/[.08] px-4 py-2.5 text-xs font-semibold text-blue-200 transition hover:border-blue-300/50 hover:bg-blue-500/[.14]"
-                >
-                  Try VPC Again
-                </button>
-                <a
-                  href="/labs/terraform"
-                  className="rounded-lg bg-blue-500 px-4 py-2.5 text-center text-xs font-semibold text-[#021018] transition hover:bg-blue-400"
-                >
-                  Continue to Terraform →
-                </a>
-              </div>
-            </div>
-          </section>
         </section>
       </main>
     );
@@ -1035,23 +942,6 @@ function Requirement({ label }: { label: string }) {
     <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[.015] px-3 py-2.5">
       <span className="text-blue-400">✓</span>
       <span className="text-[10px] text-gray-400">{label}</span>
-    </div>
-  );
-}
-
-function ScoreCard({
-  label,
-  value,
-  warning,
-}: {
-  label: string;
-  value: string;
-  warning?: boolean;
-}) {
-  return (
-    <div className={`rounded-xl border p-4 ${warning ? "border-amber-400/20 bg-amber-400/[.025]" : "border-white/10 bg-white/[.015]"}`}>
-      <p className="text-[9px] uppercase tracking-wider text-gray-600">{label}</p>
-      <p className={`mt-2 text-base font-semibold ${warning ? "text-amber-300" : "text-gray-200"}`}>{value}</p>
     </div>
   );
 }
