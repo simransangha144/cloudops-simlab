@@ -6,7 +6,7 @@ const platforms = [
     icon: "AWS",
     title: "Amazon Web Services",
     description:
-      "VPCs, EC2, RDS, IAM, ALB, security groups and production networking.",
+      "VPCs, API Gateway, Lambda, ECS, EC2, ALB and production networking.",
     status: "AVAILABLE",
   },
   {
@@ -50,7 +50,7 @@ const labs: Lab[] = [
     difficulty: "ADVANCED",
     time: "20–30 min",
     description:
-      "Design a highly available private application architecture using production-grade AWS networking patterns.",
+      "Design a production API architecture where multiple AWS implementation patterns can be valid.",
     tags: ["AWS", "Networking", "Security"],
     href: "/labs/aws-vpc",
     available: true,
@@ -149,7 +149,7 @@ export default function Home() {
             <p className="mt-7 max-w-2xl text-base leading-8 text-gray-400 sm:text-lg">
               CloudOps SimLab puts candidates inside realistic infrastructure
               scenarios where architecture decisions matter, resources can be
-              misleading, and there is no second attempt.
+              misleading, and more than one production architecture may be valid.
             </p>
 
             <div className="mt-9 flex flex-wrap gap-4">
@@ -174,8 +174,8 @@ export default function Home() {
             {/* Quick stats */}
             <div className="mt-12 flex flex-wrap gap-8 border-t border-white/10 pt-7">
               <Metric value="01" label="Live Assessment" />
-              <Metric value="01" label="Attempt Per Candidate" />
-              <Metric value="100" label="Architecture Score" />
+              <Metric value="∞" label="Practice Attempts" />
+              <Metric value="04" label="Valid Patterns" />
               <Metric value="∞" label="Cloud Scenarios" />
             </div>
           </div>
@@ -228,7 +228,7 @@ export default function Home() {
                 </div>
 
                 <div className="text-amber-400">
-                  ⚠ 1 attempt remaining
+                  ✓ practice mode enabled
                 </div>
               </div>
 
@@ -248,8 +248,8 @@ export default function Home() {
 
                 <div className="mt-6 grid grid-cols-3 gap-2">
                   <PreviewBox label="RESOURCES" value="48" />
-                  <PreviewBox label="REQUIRED" value="14" />
-                  <PreviewBox label="ATTEMPTS" value="1" />
+                  <PreviewBox label="PATTERNS" value="04" />
+                  <PreviewBox label="MODE" value="PRACTICE" />
                 </div>
               </div>
             </div>
@@ -326,7 +326,7 @@ export default function Home() {
           <SectionHeading
             eyebrow="Simulation Labs"
             title="Real engineering decisions"
-            description="These are assessments, not guided tutorials. Read the scenario, reason about the architecture and submit when you are confident."
+            description="These are architecture assessments, not guided tutorials. Multiple AWS implementation patterns may be valid; your score depends on the pattern you choose and how well you defend it."
           />
 
           <div className="grid gap-6 lg:grid-cols-3">
@@ -362,7 +362,7 @@ export default function Home() {
 
                 <div className="mt-6 flex items-center gap-5 text-[10px] text-gray-600">
                   <span>◷ {lab.time}</span>
-                  {lab.available && <span>● ONE ATTEMPT</span>}
+                  {lab.available && <span>● PRACTICE MODE</span>}
                 </div>
 
                 <div className="mt-6 flex flex-wrap gap-2">
